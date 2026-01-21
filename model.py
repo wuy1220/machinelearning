@@ -29,7 +29,7 @@ class SignalPreprocessor:
     信号预处理类，实现Butterworth低通滤波和损伤指数计算
     """
     
-    def __init__(self, fs: float = 1000, cutoff_freq: float = 50, order: int = 4):
+    def __init__(self, fs: float = 100, cutoff_freq: float = 25, order: int = 4):
         """
         初始化预处理器
         
@@ -302,6 +302,15 @@ class OffshoreDamageDetectionSystem:
             transforms.RandomRotation(degrees=15),
         ])
 
+        self.train_transform = transforms.Compose([
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.RandomRotation(degrees=15),
+        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+        ])
+        self.test_transform = transforms.Compose([
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+        ])
+
     
 
     def load_simulation_data(self, 
@@ -456,15 +465,15 @@ class OffshoreDamageDetectionSystem:
         # 创建数据集
         train_dataset = OffshoreStructureDataset(
             X_train, img_train, y_train,
-            transform=self.image_transform
+            transform=self.train_transform
         )
         val_dataset = OffshoreStructureDataset(
             X_val, img_val, y_val,
-            transform=self.image_transform
+            transform=self.test_transform
         )
         test_dataset = OffshoreStructureDataset(
             X_test, img_test, y_test,
-            transform=self.image_transform
+            transform=self.test_transform
         )
         
         # 创建数据加载器

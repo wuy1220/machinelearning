@@ -5,7 +5,7 @@
 import numpy as np
 import torch
 from model import OffshoreDamageDetectionSystem
-from mdof_emu_2 import generate_mdof_dataset_parallel
+from mdof_emu_2_noisier import generate_mdof_dataset_parallel
 import matplotlib.pyplot as plt
 
 def main_with_simulation_data():
@@ -26,7 +26,10 @@ def main_with_simulation_data():
         segment_time=10.0,
         n_jobs=-1,
         force_regen=False,  # 设为True强制重新生成
-        seed=42
+        seed=42, 
+        noise_level=0,      # 噪声水平
+        damage_subtlety=0,   # 损伤隐蔽程度
+        add_texture=False        # 添加纹理
     )
     
     print(f"  ✓ 生成 {len(signals)} 个样本")

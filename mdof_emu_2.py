@@ -519,7 +519,7 @@ if __name__ == "__main__":
     print("=" * 70)
     
     # 测试参数
-    n_samples = 10000  # 样本数
+    n_samples = 100  # 样本数
     n_dof = 10 # 自由度
     
     # 生成数据

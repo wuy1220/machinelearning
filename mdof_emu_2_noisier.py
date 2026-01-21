@@ -403,12 +403,13 @@ class OptimizedMDOFSimulator:
         # 4. 添加随机干扰图案 (纹理/网格/划痕)
         # ==============================================================================
         if add_texture:
-            pattern_type = np.random.randint(0, 3)
+            #pattern_type = np.random.randint(0, 3)
+            pattern_type = 2
             
             if pattern_type == 0:
                 # --- 干扰A: 浅色网格 ---
                 # 添加非常淡的水平和垂直线条
-                grid_intensity = np.random.uniform(0.01, 0.03)
+                grid_intensity = np.random.uniform(0.05, 0.1)
                 img_array[:, ::20, :] += grid_intensity  # 横线
                 img_array[::20, :, :] += grid_intensity  # 竖线
                 
@@ -429,7 +430,7 @@ class OptimizedMDOFSimulator:
                     rr, cc = line(y_start, x_start, y_end, x_end)
                     # 简单检查边界
                     valid = (rr >= 0) & (rr < target_size) & (cc >= 0) & (cc < target_size)
-                    img_array[rr[valid], cc[valid], :] *= np.random.uniform(0.7, 0.9)
+                    img_array[rr[valid], cc[valid], :] *= np.random.uniform(0.2, 0.7)
                     
             elif pattern_type == 2:
                 # --- 干扰C: 局部色块/污渍 ---
@@ -441,7 +442,7 @@ class OptimizedMDOFSimulator:
                     r = np.random.randint(10, 30)
                     y_grid, x_grid = np.ogrid[:target_size, :target_size]
                     mask = (x_grid - cx)**2 + (y_grid - cy)**2 <= r**2
-                    stain_intensity = np.random.uniform(0.05, 0.15)
+                    stain_intensity = np.random.uniform(0.05, 0.2)
                     stain_color = np.random.choice([1, -1]) # 变亮或变暗
                     img_array[mask] += stain_intensity * stain_color
 
@@ -558,7 +559,7 @@ def generate_single_sample(seed, label, sim_params,
         add_texture=add_texture,
         random_seed=seed
     )
-    img = np.transpose(img, (2, 0, 1))  # (C, H, W)
+    
     
     return response, img, label
 
@@ -621,7 +622,8 @@ def generate_mdof_dataset_parallel(n_samples=100, n_dof=10,
     # 加载或生成数据
     signals, images, labels = cache.load_or_generate(
         n_samples, n_dof, segment_time, force_regen, 
-        generator_func, seed
+        generator_func, seed,
+        noise_level, damage_subtlety, add_texture
     )
     
     return signals, images, labels
@@ -686,7 +688,7 @@ def visualize_damage_subtlety_comparison():
     
     # 不同参数组合
     configs = [
-        ("原始版本（明显红圈）", 0.0, 0.0, False),
+        ("原始版本", 0.0, 0.0, False),
         ("低隐蔽 + 低噪声", 0.02, 0.3, False),
         ("中等隐蔽 + 中等噪声", 0.05, 0.7, False),
         ("高隐蔽 + 高噪声 + 纹理", 0.08, 0.9, True),
@@ -731,8 +733,8 @@ def visualize_damage_subtlety_comparison():
     
     plt.suptitle('损伤隐蔽程度对比 (损伤位于中间节点)', fontsize=14, fontweight='bold')
     plt.tight_layout()
-    plt.savefig('damage_subtlety_comparison.png', dpi=150, bbox_inches='tight')
-    print("✓ 可视化对比图已保存: damage_subtlety_comparison.png")
+    plt.savefig('damage_subtlety_comparison_noisier.png', dpi=150, bbox_inches='tight')
+    print("✓ 可视化对比图已保存: damage_subtlety_comparison_noisier.png")
 
 
 if __name__ == "__main__":
@@ -743,20 +745,25 @@ if __name__ == "__main__":
     visualize_damage_subtlety_comparison()
 
     # 测试参数
-    n_samples = 1000  # 样本数
+    n_samples = 100  # 样本数
     n_dof = 10 # 自由度
     
     # 生成数据
+    # 记录程序开始执行的时间
     start_time = time.time()
-    signals, images, labels = generate_mdof_dataset_parallel(
-        n_samples=n_samples,
-        n_dof=n_dof,
-        segment_time=10.0,
-        n_jobs=-1,
-        force_regen=True,  # 设为 True 强制重新生成
-        seed=42,
+
+    
+    # 使用并行方式生成多自由度(MDOF)数据集
+    # 参数说明：
+    signals, images, labels = generate_mdof_dataset_parallel(  # 返回信号、图像和标签三个数据
+        n_samples=n_samples,        # 样本数量
+        n_dof=n_dof,                # 自由度数量
+        segment_time=10.0,          # 每个片段的时间长度(秒)
+        n_jobs=-1,                  # 使用所有可用的CPU核心进行并行计算
+        force_regen=False,  # 设为 True 强制重新生成数据集
+        seed=42,                    # 随机种子，确保结果可复现
         noise_level=0.05,      # 噪声水平
-        damage_subtlety=0.5,   # 损伤隐蔽程度
+        damage_subtlety=0.2,   # 损伤隐蔽程度
         add_texture=True        # 添加纹理
     )
     end_time = time.time()
