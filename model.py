@@ -10,11 +10,12 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from torchvision import models, transforms
-from scipy import signal
+from scipy import signal, stats
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import confusion_matrix, classification_report
 import matplotlib.pyplot as plt
 from typing import Tuple, List, Dict
+from sklearn.model_selection import train_test_split
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -175,9 +176,7 @@ class OffshoreStructureDataset(Dataset):
         return time_series, image, label
 
 
-# ============================================================================
-# 3. 多模态深度学习模型 (MLP + ResNet50)
-# ============================================================================
+
 
 class MultiModalDamageDetector(nn.Module):
     """
@@ -302,6 +301,191 @@ class OffshoreDamageDetectionSystem:
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomRotation(degrees=15),
         ])
+
+    
+
+    def load_simulation_data(self, 
+                            signals: np.ndarray, 
+                            images: np.ndarray, 
+                            labels: np.ndarray,
+                            feature_selection: str = 'first_sensor',
+                            sensor_indices: List[int] = None,
+                            normalize: bool = True) -> Tuple[DataLoader, DataLoader, DataLoader]:
+        """
+        加载并处理仿真生成器生成的数据
+        
+        参数:
+            signals: 仿真信号数据 (n_samples, n_dof, n_timepoints)
+            images: 图像数据 (n_samples, 3, 224, 224)
+            labels: 损伤标签 (n_samples,)
+            feature_selection: 特征选择策略
+                - 'first_sensor': 使用第一个传感器
+                - 'mean': 使用所有传感器的平均
+                - 'concatenate': 拼接多个传感器的特征
+                - 'specified': 使用指定的传感器索引
+            sensor_indices: 指定的传感器索引列表（仅当feature_selection='specified'时使用）
+            normalize: 是否对特征进行归一化
+        
+        返回:
+            train_loader: 训练数据加载器
+            val_loader: 验证数据加载器
+            test_loader: 测试数据加载器
+        """
+        print("\n" + "=" * 60)
+        print("加载仿真生成器数据")
+        print("=" * 60)
+        
+        n_samples, n_dof, n_timepoints = signals.shape
+        print(f"原始信号形状: {signals.shape}")
+        print(f"图像形状: {images.shape}")
+        print(f"标签形状: {labels.shape}")
+        
+        # ==================== 1. 特征提取 ====================
+        print("\n[步骤1] 提取时间序列特征...")
+        print(f"  特征选择策略: {feature_selection}")
+        
+        # 根据策略提取特征
+        if feature_selection == 'first_sensor':
+            # 使用第一个传感器
+            time_series_features = np.array([
+                self._extract_statistical_features(signals[i, 0, :]) 
+                for i in range(n_samples)
+            ])
+            print(f"  ✓ 使用第一个传感器")
+            
+        elif feature_selection == 'mean':
+            # 使用所有传感器的平均
+            averaged_signals = signals.mean(axis=1)  # (n_samples, n_timepoints)
+            time_series_features = np.array([
+                self._extract_statistical_features(averaged_signals[i, :]) 
+                for i in range(n_samples)
+            ])
+            print(f"  ✓ 使用所有传感器平均")
+            
+        elif feature_selection == 'concatenate':
+            # 拼接多个传感器的特征（最多3个，避免维度过高）
+            n_sensors_to_use = min(3, n_dof)
+            features_per_sensor = 16
+            time_series_features = np.zeros((n_samples, n_sensors_to_use * features_per_sensor))
+            
+            for i in range(n_samples):
+                for j in range(n_sensors_to_use):
+                    sensor_idx = j
+                    feat = self._extract_statistical_features(signals[i, sensor_idx, :])
+                    time_series_features[i, j*features_per_sensor:(j+1)*features_per_sensor] = feat
+            
+            print(f"  ✓ 拼接 {n_sensors_to_use} 个传感器的特征 (共 {n_sensors_to_use*features_per_sensor} 维)")
+            
+        elif feature_selection == 'specified':
+            # 使用指定的传感器
+            if sensor_indices is None:
+                sensor_indices = [0, n_dof//2, n_dof-1]  # 默认：首、中、尾
+                print(f"  ⚠ 未指定传感器索引，使用默认: {sensor_indices}")
+            
+            features_per_sensor = 16
+            time_series_features = np.zeros((n_samples, len(sensor_indices) * features_per_sensor))
+            
+            for i in range(n_samples):
+                for j, sensor_idx in enumerate(sensor_indices):
+                    feat = self._extract_statistical_features(signals[i, sensor_idx, :])
+                    time_series_features[i, j*features_per_sensor:(j+1)*features_per_sensor] = feat
+            
+            print(f"  ✓ 使用指定传感器 {sensor_indices}")
+        
+        else:
+            raise ValueError(f"未知的特征选择策略: {feature_selection}")
+        
+        # 检查NaN和Inf
+        if np.any(np.isnan(time_series_features)) or np.any(np.isinf(time_series_features)):
+            print("  ⚠ 检测到NaN或Inf值，正在修复...")
+            time_series_features = np.nan_to_num(time_series_features, nan=0.0, posinf=1.0, neginf=0.0)
+        
+        print(f"  ✓ 特征形状: {time_series_features.shape}")
+        
+        # ==================== 2. 特征归一化 ====================
+        if normalize:
+            print("\n[步骤2] 归一化特征...")
+            if not hasattr(self, 'scaler'):
+                self.scaler = MinMaxScaler()
+            
+            time_series_features = self.scaler.fit_transform(time_series_features)
+            print(f"  ✓ 特征范围: [{time_series_features.min():.4f}, {time_series_features.max():.4f}]")
+        
+        # ==================== 3. 图像归一化 ====================
+        print("\n[步骤3] 处理图像数据...")
+        # 确保图像在 [0, 1] 范围内（用于后续的ImageNet标准化）
+        images = np.clip(images, 0, 1)
+        print(f"  ✓ 图像范围: [{images.min():.4f}, {images.max():.4f}]")
+        
+        # ==================== 4. 划分数据集 ====================
+        print("\n[步骤4] 划分训练/验证/测试集...")
+        
+        # 使用分层抽样确保标签分布均匀
+        train_ratio, val_ratio, test_ratio = 0.6, 0.2, 0.2
+        
+        # 第一次划分：训练集 vs 临时集
+        X_train, X_temp, y_train, y_temp, img_train, img_temp = train_test_split(
+            time_series_features, labels, images,
+            test_size=(val_ratio + test_ratio),
+            random_state=42,
+            stratify=labels
+        )
+        
+        # 第二次划分：验证集 vs 测试集
+        X_val, X_test, y_val, y_test, img_val, img_test = train_test_split(
+            X_temp, y_temp, img_temp,
+            test_size=test_ratio / (val_ratio + test_ratio),
+            random_state=42,
+            stratify=y_temp
+        )
+        
+        print(f"  ✓ 训练集: {len(X_train)} 样本 (标签分布: {np.bincount(y_train)})")
+        print(f"  ✓ 验证集: {len(X_val)} 样本 (标签分布: {np.bincount(y_val)})")
+        print(f"  ✓ 测试集: {len(X_test)} 样本 (标签分布: {np.bincount(y_test)})")
+        
+        # ==================== 5. 创建数据加载器 ====================
+        print("\n[步骤5] 创建数据加载器...")
+        
+        # 更新模型的MLP输入维度（如果需要）
+        mlp_input_dim = X_train.shape[1]
+        if self.model.mlp[0].in_features != mlp_input_dim:
+            print(f"  ⚠ 调整MLP输入维度: {self.model.mlp[0].in_features} -> {mlp_input_dim}")
+            self.model.mlp[0] = nn.Linear(mlp_input_dim, self.model.mlp[0].out_features)
+            self.model.to(self.device)
+        
+        # 创建数据集
+        train_dataset = OffshoreStructureDataset(
+            X_train, img_train, y_train,
+            transform=self.image_transform
+        )
+        val_dataset = OffshoreStructureDataset(
+            X_val, img_val, y_val,
+            transform=self.image_transform
+        )
+        test_dataset = OffshoreStructureDataset(
+            X_test, img_test, y_test,
+            transform=self.image_transform
+        )
+        
+        # 创建数据加载器
+        batch_size = 32
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+        test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+        
+        print(f"  ✓ 批大小: {batch_size}")
+        print(f"  ✓ 训练批数: {len(train_loader)}")
+        print(f"  ✓ 验证批数: {len(val_loader)}")
+        print(f"  ✓ 测试批数: {len(test_loader)}")
+        
+        print("\n" + "=" * 60)
+        print("✓ 数据加载完成！")
+        print("=" * 60)
+        
+        return train_loader, val_loader, test_loader
+
+
+
         
     def prepare_training_data(self, 
                              acceleration_signals: Dict[int, np.ndarray],
@@ -377,8 +561,8 @@ class OffshoreDamageDetectionSystem:
             np.min(signal_window),
             np.percentile(signal_window, 25),
             np.percentile(signal_window, 75),
-            np.skew(signal_window),
-            np.kurtosis(signal_window),
+            stats.skew(signal_window),
+            stats.kurtosis(signal_window),
             np.sqrt(np.mean(signal_window**2)),  # RMS
             np.ptp(signal_window),  # Peak-to-peak
             np.sum(np.abs(np.diff(signal_window))) / len(signal_window),  # 振动烈度
@@ -420,7 +604,7 @@ class OffshoreDamageDetectionSystem:
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode='min', factor=0.5, patience=5, verbose=True
+            optimizer, mode='min', factor=0.5, patience=5
         )
         
         history = {
@@ -506,7 +690,7 @@ class OffshoreDamageDetectionSystem:
                     break
             
             # 打印训练进度
-            if (epoch + 1) % 5 == 0:
+            if (epoch + 1) % 1 == 0:
                 print(f'Epoch [{epoch+1}/{epochs}], '
                       f'Train Loss: {avg_train_loss:.4f}, Train Acc: {train_accuracy:.2f}%, '
                       f'Val Loss: {avg_val_loss:.4f}, Val Acc: {val_accuracy:.2f}%')
