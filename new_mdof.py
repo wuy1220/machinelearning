@@ -51,7 +51,7 @@ class JacketPlatformSimulator:
         self.K = None  # 刚度矩阵
         self.K0 = None # 初始刚度矩阵（用于健康状态）
         
-        # 存储健康状态响应
+        # 存储健康状态响应 (注意：在修正后的逻辑中，这个属性主要用于兼容性，实际计算在生成器内部完成)
         self.healthy_response = None
         
         # 初始化系统
@@ -113,7 +113,7 @@ class JacketPlatformSimulator:
         self.natural_frequencies = np.sqrt(eigenvalues)
         self.mode_shapes = eigenvectors
         
-        print(f"系统固有频率 (前5阶): {self.natural_frequencies[:5] / (2*np.pi)} Hz")
+        # print(f"系统固有频率 (前5阶): {self.natural_frequencies[:5] / (2*np.pi)} Hz")
     
     def _build_damping_matrix(self):
         """构建Rayleigh阻尼矩阵 C = αM + βK"""
@@ -156,7 +156,7 @@ class JacketPlatformSimulator:
         return K_damaged
     
     def generate_excitation(self, 
-                          excitation_type: str = 'impact',
+                          excitation_type: str = 'random',
                           amplitude_range: Tuple[float, float] = (0, 2000),
                           frequencies: Optional[List[float]] = None) -> np.ndarray:
         """
@@ -276,6 +276,7 @@ class JacketPlatformSimulator:
                            filename: Optional[str] = None) -> np.ndarray:
         """
         生成健康状态响应并保存
+        (注意：此方法保留用于兼容性，但主要数据生成现在在 DamageDataGenerator 内部处理)
         """
         healthy_responses = []
         
@@ -290,7 +291,7 @@ class JacketPlatformSimulator:
             if filename is None:
                 filename = 'healthy_response.mat'
             savemat(filename, {'healthy_response': self.healthy_response})
-            print(f"健康状态响应已保存至 {filename}")
+            # print(f"健康状态响应已保存至 {filename}")
         
         return self.healthy_response
 
@@ -481,7 +482,7 @@ class GVRFeatureExtractor:
                                    left=normalized[0], right=normalized[-1])
             except Exception as e:
                 # 如果插值失败（例如点太少），使用最近邻插值
-                print(f"Warning: Interpolation failed for sample {i}, using nearest neighbor. Error: {e}")
+                # print(f"Warning: Interpolation failed for sample {i}, using nearest neighbor. Error: {e}")
                 # 使用最近邻方法
                 indices = np.clip(np.searchsorted(x_original, x_new), 0, len(x_original) - 1)
                 z_row = normalized[indices]
@@ -500,7 +501,7 @@ class GVRFeatureExtractor:
 class DamageDataGenerator:
     """
     损伤数据生成器
-    用于生成包含多种损仿场景的训练数据
+    用于生成包含多种损伤场景的训练数据
     """
     
     def __init__(self, 
@@ -531,7 +532,9 @@ class DamageDataGenerator:
                                        scenario_id: int,
                                        save_data: bool = True) -> Dict:
         """
-        生成单个损仿场景的数据
+        生成单个损伤场景的数据
+        
+        *** 修正点：确保损伤响应和健康响应对应同一个激励 ***
         
         Args:
             damaged_dofs: 受损自由度列表
@@ -542,23 +545,24 @@ class DamageDataGenerator:
         Returns:
             生成的数据字典
         """
-        # 应用损仿
+        # --- 修正 1：生成激励 ---
+        # 建议使用 'impact' 以获得明显的时变特征，或者 'random' 但要保证健康基准匹配
+        # 这里使用 'impact' 以便调试时能立刻看到效果，实际训练数据集可以视情况改为 'random'
+        F = self.simulator.generate_excitation(excitation_type='impact')
+        
+        # --- 修正 2：计算健康响应（使用同一个激励 F） ---
+        healthy_response_current = self.simulator.simulate_response(self.simulator.K0, F)
+        
+        # 应用损伤
         K_damaged = self.simulator.apply_damage(damaged_dofs, severity_ratios)
         
-        # 生成激励
-        F = self.simulator.generate_excitation(excitation_type='random')
-        
-        # 计算响应
+        # --- 修正 3：计算损伤响应（使用同一个激励 F） ---
         damaged_response = self.simulator.simulate_response(K_damaged, F)
         
-        # 提取GVR特征
-        if self.simulator.healthy_response is None:
-            # 如果没有健康状态数据，生成一个
-            self.simulator.get_healthy_response()
-        
+        # --- 修正 4：提取GVR特征（使用当前场景对应的健康响应，而不是 simulator.healthy_response） ---
         gvr_features = self.gvr_extractor.extract_gvr_features(
             damaged_response, 
-            self.simulator.healthy_response
+            healthy_response_current  # <--- 关键修正
         )
         
         # 生成特征图
@@ -568,7 +572,7 @@ class DamageDataGenerator:
         labels = np.zeros(self.simulator.num_degrees)
         labels[damaged_dofs] = 1
         
-        # 创建损仿类别标签（用于分类）
+        # 创建损伤类别标签（用于分类）
         damage_class = self._create_damage_class_label(damaged_dofs, severity_ratios)
         
         # 组织数据
@@ -602,28 +606,28 @@ class DamageDataGenerator:
                                   damaged_dofs: List[int],
                                   severity_ratios: List[float]) -> int:
         """
-        创建损仿类别标签
+        创建损伤类别标签
         用于多分类任务
         """
-        # 根据损仿位置和严重程度创建类别
+        # 根据损伤位置和严重程度创建类别
         # 这是一个简化的分类方案
         
         if len(damaged_dofs) == 0:
             return 0  # 健康
         elif len(damaged_dofs) == 1:
-            # 单点损仿，根据位置分类
+            # 单点损伤，根据位置分类
             dof = damaged_dofs[0]
             severity = severity_ratios[0]
             
             if severity < 0.3:
-                return 1  # 轻微损仿
+                return 1  # 轻微损伤
             elif severity < 0.6:
-                return 2  # 中等损仿
+                return 2  # 中等损伤
             else:
-                return 3  # 严重损仿
+                return 3  # 严重损伤
         else:
-            # 多点损仿
-            return 4  # 多点损仿
+            # 多点损伤
+            return 4  # 多点损伤
     
     def _save_scenario_data(self, data: Dict, scenario_id: int):
         """保存单个场景的数据"""
@@ -654,12 +658,12 @@ class DamageDataGenerator:
                                       max_severity: float = 0.8,
                                       healthy_ratio: float = 0.1) -> Dict:
         """
-        生成综合损仿数据集
+        生成综合损伤数据集
         
         Args:
             num_scenarios: 总场景数
-            min_damage_dofs: 最小损仿自由度数
-            max_damage_dofs: 最大损仿自由度数
+            min_damage_dofs: 最小损伤自由度数
+            max_damage_dofs: 最大损伤自由度数
             min_severity: 最小严重程度
             max_severity: 最大严重程度
             healthy_ratio: 健康样本比例
@@ -683,12 +687,12 @@ class DamageDataGenerator:
                 save_data=True
             )
         
-        # 生成损仿样本
-        print(f"生成 {num_damaged} 个损仿样本...")
+        # 生成损伤样本
+        print(f"生成 {num_damaged} 个损伤样本...")
         for i in range(num_damaged):
             scenario_id = num_healthy + i
             
-            # 随机选择损仿位置和严重程度
+            # 随机选择损伤位置和严重程度
             num_damage_dofs = np.random.randint(min_damage_dofs, max_damage_dofs + 1)
             damaged_dofs = np.random.choice(
                 range(self.simulator.num_degrees), 
@@ -718,7 +722,7 @@ class DamageDataGenerator:
         print(f"数据集生成完成！")
         print(f"总场景数: {num_scenarios}")
         print(f"健康样本: {num_healthy}")
-        print(f"损仿样本: {num_damaged}")
+        print(f"损伤样本: {num_damaged}")
         print(f"总样本数: {stats['total_samples']}")
         
         return stats
@@ -729,7 +733,7 @@ class DamageDataGenerator:
         with open(metadata_file, 'w') as f:
             json.dump(self.metadata, f, indent=2)
         
-        print(f"元数据已保存至 {metadata_file}")
+        # print(f"元数据已保存至 {metadata_file}")
     
     def _compute_statistics(self) -> Dict:
         """计算数据集统计信息"""
@@ -750,7 +754,7 @@ class DamageDataGenerator:
 
 class JacketDamageDataset(Dataset):
     """
-    导管架平台损仿数据集类
+    导管架平台损伤数据集类
     用于PyTorch训练
     """
     
@@ -827,12 +831,17 @@ def visualize_generated_data(data_generator: DamageDataGenerator,
     """
     可视化生成的数据
     
+    *** 修正点：自动选择包含内容的窗口，修复 IndexError ***
+    
     Args:
         data_generator: 数据生成器
         num_scenarios: 要可视化的场景数量
     """
+    # 修正处理单行时 axes 维度问题
     fig, axes = plt.subplots(num_scenarios, 4, figsize=(20, 5*num_scenarios))
-    
+    if num_scenarios == 1:
+        axes = axes.reshape(1, -1) # 强制转为 2D 数组
+        
     for i in range(num_scenarios):
         if i >= len(data_generator.metadata):
             break
@@ -846,12 +855,17 @@ def visualize_generated_data(data_generator: DamageDataGenerator,
             labels = hf['labels'][:]
             damage_class = hf['damage_class'][0]
         
-        # 可视化第一个样本的特征图
-        feature_map = feature_maps[0]
+        # *** 修正：自动选择能量最大的窗口，而不是默认第0个 ***
+        # 计算每个窗口的总能量
+        energies = np.sum(np.abs(feature_maps), axis=(1, 2, 3))
+        best_window_idx = np.argmax(energies)
+        
+        # 可视化选中的特征图
+        feature_map = feature_maps[best_window_idx]
         
         # 原始特征图
         axes[i, 0].imshow(feature_map)
-        axes[i, 0].set_title(f'Scenario {scenario_id}: Feature Map')
+        axes[i, 0].set_title(f'Scenario {scenario_id} (Window {best_window_idx})')
         axes[i, 0].axis('off')
         
         # RGB通道
@@ -873,7 +887,7 @@ def visualize_generated_data(data_generator: DamageDataGenerator,
     plt.savefig(os.path.join(data_generator.output_dir, 'data_visualization.png'), dpi=300)
     plt.close()
     
-    print(f"数据可视化图已保存")
+    # print(f"数据可视化图已保存")
 
 
 # 示例使用
@@ -902,14 +916,13 @@ if __name__ == "__main__":
         filter_order=4
     )
     
-    # 3. 生成健康状态响应
-    print("生成健康状态响应...")
-    simulator.get_healthy_response(
-        excitation_type='random',
-        num_simulations=5,
-        save_to_file=True,
-        filename='healthy_response.mat'
-    )
+    # 3. 生成健康状态响应 (保留兼容性，但在 generate_single_damage_scenario 中不再依赖它)
+    # simulator.get_healthy_response(
+    #     excitation_type='random',
+    #     num_simulations=5,
+    #     save_to_file=True,
+    #     filename='healthy_response.mat'
+    # )
     
     # 4. 创建数据生成器
     print("创建数据生成器...")
@@ -919,8 +932,8 @@ if __name__ == "__main__":
         output_dir='./jacket_damage_data'
     )
     
-    # 5. 生成单个损仿场景（测试）
-    print("生成测试损仿场景...")
+    # 5. 生成单个损伤场景（测试）
+    print("生成测试损伤场景...")
     try:
         test_scenario = data_generator.generate_single_damage_scenario(
             damaged_dofs=[5, 10, 15],
@@ -976,8 +989,8 @@ if __name__ == "__main__":
             print(f"批次 {batch_idx + 1}:")
             print(f"  特征图形状: {feature_maps.shape}")
             print(f"  标签形状: {labels.shape}")
-            print(f"  损仿类别形状: {damage_classes.shape}")
-            print(f"  损仿类别示例: {damage_classes}")
+            print(f"  损伤类别形状: {damage_classes.shape}")
+            print(f"  损伤类别示例: {damage_classes}")
             
             if batch_idx >= 0:  # 只打印第一个批次
                 break

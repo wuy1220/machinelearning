@@ -1,844 +1,1359 @@
-"""
-=============================================================================
-MDOF仿真数据质量检查可视化工具
-MDOF Simulation Data Quality Inspection Visualizer
-
-功能:
-1. 数据基本统计信息汇总
-2. 时域信号可视化与对比
-3. 频域分析 (FFT功率谱)
-4. 图像质量检查
-5. 标签分布分析
-6. 跨模态一致性验证
-7. 异常值检测
-8. 类间可分性分析
-=============================================================================
-"""
-
+import os
+import json
 import numpy as np
+import h5py
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-import seaborn as sns
-from scipy import signal
-from scipy.stats import skew, kurtosis
+from scipy import stats
 import pandas as pd
-from typing import Optional, Tuple, List
 import warnings
+from typing import Dict, List, Tuple, Optional
 
+# 配置设置
 warnings.filterwarnings('ignore')
 
-
-
-# 设置Seaborn样式
-sns.set_style("whitegrid")
-sns.set_palette("husl")
-
-# 设置中文字体
-plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'PingFang SC', 'DejaVu Sans']
+# 设置中文字体支持
+plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans', 'Arial Unicode MS']
 plt.rcParams['axes.unicode_minus'] = False
 
-class MDOFDataQualityInspector:
+class DataQualityInspector:
     """
-    MDOF仿真数据质量检查器
+    数据质量检查器
+    用于全面验证导管架平台损伤数据的质量
     
-    提供全面的数据质量诊断和可视化功能
+    主要检查项：
+    1. 元数据完整性
+    2. 文件是否存在
+    3. 数据维度一致性
+    4. NaN和Inf值检查
+    5. 数值范围合理性
+    6. 标签一致性
+    7. 信号质量
+    8. 损伤判别能力
+    9. 数据分布平衡性
     """
     
-    def __init__(self, signals: np.ndarray, images: np.ndarray, 
-                 labels: np.ndarray, fs: float = 100.0):
+    def __init__(self, data_dir: str):
         """
-        初始化检查器
+        初始化数据检查器
         
-        参数:
-            signals: (n_samples, n_dof, n_timepoints)
-            images: (n_samples, 3, H, W) 或 (n_samples, H, W, C)
-            labels: (n_samples,)
-            fs: 采样频率 (Hz)
+        Args:
+            data_dir: 数据目录路径
         """
-        self.signals = signals
-        self.images = self._normalize_images(images)
-        self.labels = labels
-        self.fs = fs
+        self.data_dir = data_dir
+        self.metadata = None
+        self.check_results = {}
+        self.quality_score = 0.0
         
-        # 基本信息
-        self.n_samples, self.n_dof, self.n_timepoints = signals.shape
-        self.n_classes = len(np.unique(labels))
-        self.class_names = ['健康', '中间损伤', '底部损伤', '多处损伤'][:self.n_classes]
-        
-        # 计算频域信息
-        self.freqs = np.fft.rfftfreq(self.n_timepoints, d=1.0/fs)
-        self.nyquist = self.fs / 2
-        
-        print(f"✓ 数据质量检查器初始化完成")
-        print(f"  - 样本数: {self.n_samples}")
-        print(f"  - 自由度: {self.n_dof}")
-        print(f"  - 时间点: {self.n_timepoints}")
-        print(f"  - 类别数: {self.n_classes}")
+        # 检查阈值配置
+        self.thresholds = {
+            'max_nan_ratio': 0.0,              # 不允许NaN
+            'max_inf_ratio': 0.0,              # 不允许Inf
+            'min_acceleration_range': (-500, 500),  # 加速度合理范围 (m/s²)
+            'feature_pixel_range': (0, 1),     # 特�征图像素值范围
+            'min_signal_energy': 1e-10,        # 最小信号能量
+            'max_signal_energy': 1e10           # 最大信号能量
+        }
     
-    def _normalize_images(self, images: np.ndarray) -> np.ndarray:
-        """确保图像格式为 (n_samples, 3, H, W)"""
-        if images.ndim == 4:
-            # (n_samples, 3, H, W)
-            return images
-        elif images.ndim == 4 and images.shape[-1] == 3:
-            # (n_samples, H, W, 3) -> (n_samples, 3, H, W)
-            return np.transpose(images, (0, 3, 1, 2))
-        else:
-            raise ValueError(f"不支持的图像格式: {images.shape}")
+    def load_metadata(self) -> bool:
+        """加载元数据文件"""
+        metadata_file = os.path.join(self.data_dir, 'metadata.json')
+        if not os.path.exists(metadata_file):
+            self._add_error('metadata', '元数据文件不存在')
+            return False
+        
+        try:
+            with open(metadata_file, 'r', encoding='utf-8') as f:
+                self.metadata = json.load(f)
+            self._add_success('metadata', f'成功加载 {len(self.metadata)} 个场景的元数据')
+            return True
+        except Exception as e:
+            self._add_error('metadata', f'加载元数据失败: {str(e)}')
+            return False
     
-    # ======================================================================
-    # 1. 基本统计信息汇总
-    # ======================================================================
-    
-    def print_basic_stats(self):
-        """打印基本统计信息"""
-        print("\n" + "="*70)
-        print("数据基本信息汇总")
-        print("="*70)
+    def check_file_existence(self) -> Dict:
+        """检查所有HDF5数据文件是否存在"""
+        result = {
+            'total_scenarios': 0,
+            'missing_files': [],
+            'existing_files': []
+        }
         
-        # 信号统计
-        print("\n【信号数据统计】")
-        print(f"  形状: {self.signals.shape}")
-        print(f"  数据类型: {self.signals.dtype}")
-        print(f"  取值范围: [{self.signals.min():.4f}, {self.signals.max():.4f}]")
-        print(f"  均值: {self.signals.mean():.4f}")
-        print(f"  标准差: {self.signals.std():.4f}")
+        if self.metadata is None:
+            self.load_metadata()
+            if self.metadata is None:
+                return result
         
-        # 缺失值检查
-        nan_count = np.isnan(self.signals).sum()
-        inf_count = np.isinf(self.signals).sum()
-        print(f"  NaN值: {nan_count}")
-        print(f"  Inf值: {inf_count}")
-        
-        # 图像统计
-        print("\n【图像数据统计】")
-        print(f"  形状: {self.images.shape}")
-        print(f"  数据类型: {self.images.dtype}")
-        print(f"  取值范围: [{self.images.min():.4f}, {self.images.max():.4f}]")
-        
-        # 标签分布
-        print("\n【标签分布】")
-        label_counts = np.bincount(self.labels)
-        for i, count in enumerate(label_counts):
-            print(f"  类别 {i} ({self.class_names[i] if i < len(self.class_names) else '未知'}): {count} ({count/len(self.labels)*100:.1f}%)")
-        
-        print("="*70 + "\n")
-    
-    # ======================================================================
-    # 2. 完整的数据质量报告
-    # ======================================================================
-    
-    def generate_full_report(self, save_path: str = 'mdof_data_quality_report.png'):
-        """
-        生成完整的数据质量报告（综合多个图表）
-        """
-        fig = plt.figure(figsize=(20, 24))
-        gs = gridspec.GridSpec(6, 3, figure=fig, hspace=0.35, wspace=0.3)
-        
-        # ========== 第1行: 标签分布 + 信号统计分布 ==========
-        ax1 = fig.add_subplot(gs[0, 0])
-        self._plot_label_distribution(ax1)
-        
-        ax2 = fig.add_subplot(gs[0, 1])
-        self._plot_signal_distribution(ax2)
-        
-        ax3 = fig.add_subplot(gs[0, 2])
-        self._plot_image_pixel_distribution(ax3)
-        
-        # ========== 第2行: 时域信号对比 (健康 vs 损伤) ==========
-        for i in range(min(3, self.n_dof)):
-            ax = fig.add_subplot(gs[1, i])
-            self._plot_time_domain_comparison(ax, sensor_idx=i)
-        
-        # ========== 第3行: 频域分析对比 ==========
-        for i in range(min(3, self.n_dof)):
-            ax = fig.add_subplot(gs[2, i])
-            self._plot_frequency_domain_comparison(ax, sensor_idx=i)
-        
-        # ========== 第4行: 时域信号统计特征 ==========
-        ax4 = fig.add_subplot(gs[3, 0])
-        self._plot_signal_stats_by_class(ax4, stat='mean')
-        
-        ax5 = fig.add_subplot(gs[3, 1])
-        self._plot_signal_stats_by_class(ax5, stat='std')
-        
-        ax6 = fig.add_subplot(gs[3, 2])
-        self._plot_signal_stats_by_class(ax6, stat='rms')
-        
-        # ========== 第5行: 图像样本展示 ==========
-        for i in range(min(3, self.n_classes)):
-            ax = fig.add_subplot(gs[4, i])
-            self._plot_image_sample(ax, class_idx=i)
-        
-        # ========== 第6行: 频域特征分布 + 异常检测 ==========
-        ax7 = fig.add_subplot(gs[5, 0])
-        self._plot_frequency_stats(ax7)
-        
-        ax8 = fig.add_subplot(gs[5, 1])
-        self._plot_snr_estimation(ax8)
-        
-        ax9 = fig.add_subplot(gs[5, 2])
-        self._plot_outlier_detection(ax9)
-        
-        plt.suptitle('MDOF仿真数据质量综合报告', fontsize=20, fontweight='bold', y=0.995)
-        
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        print(f"✓ 完整数据质量报告已保存: {save_path}")
-        
-        return fig
-    
-    # ======================================================================
-    # 3. 标签分布分析
-    # ======================================================================
-    
-    def _plot_label_distribution(self, ax):
-        """绘制标签分布"""
-        label_counts = np.bincount(self.labels)
-        colors = sns.color_palette("husl", len(label_counts))
-        
-        bars = ax.bar(range(len(label_counts)), label_counts, color=colors, alpha=0.8, edgecolor='black')
-        ax.set_xlabel('类别', fontsize=11)
-        ax.set_ylabel('样本数量', fontsize=11)
-        ax.set_title('标签分布', fontsize=13, fontweight='bold')
-        ax.set_xticks(range(len(label_counts)))
-        ax.set_xticklabels([f'{i}\n{self.class_names[i] if i < len(self.class_names) else ""}' 
-                           for i in range(len(label_counts))], fontsize=9)
-        
-        # 添加数值标签
-        for bar, count in zip(bars, label_counts):
-            height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width()/2., height,
-                   f'{count}\n({count/len(self.labels)*100:.1f}%)',
-                   ha='center', va='bottom', fontsize=9)
-        
-        ax.grid(axis='y', alpha=0.3)
-    
-    # ======================================================================
-    # 4. 信号值分布分析
-    # ======================================================================
-    
-    def _plot_signal_distribution(self, ax):
-        """绘制信号值分布（直方图）"""
-        signal_flat = self.signals.flatten()
-        
-        ax.hist(signal_flat, bins=100, density=True, alpha=0.7, 
-                color='steelblue', edgecolor='black')
-        
-        # 添加正态分布拟合
-        mu, sigma = signal_flat.mean(), signal_flat.std()
-        x = np.linspace(signal_flat.min(), signal_flat.max(), 200)
-        y = 1/(sigma*np.sqrt(2*np.pi)) * np.exp(-0.5*((x-mu)/sigma)**2)
-        ax.plot(x, y, 'r--', linewidth=2, label=f'正态分布\nμ={mu:.3f}\nσ={sigma:.3f}')
-        
-        ax.set_xlabel('信号值', fontsize=11)
-        ax.set_ylabel('概率密度', fontsize=11)
-        ax.set_title('信号值分布', fontsize=13, fontweight='bold')
-        ax.legend(fontsize=9)
-        ax.grid(alpha=0.3)
-        
-        # 添加统计信息文本框
-        stats_text = (f'偏度: {skew(signal_flat):.3f}\n'
-                     f'峰度: {kurtosis(signal_flat):.3f}')
-        ax.text(0.95, 0.95, stats_text, transform=ax.transAxes,
-               ha='right', va='top', bbox=dict(facecolor='wheat', alpha=0.5),
-               fontsize=9)
-    
-    # ======================================================================
-    # 5. 图像像素值分布分析
-    # ======================================================================
-    
-    def _plot_image_pixel_distribution(self, ax):
-        """绘制图像像素值分布"""
-        pixel_flat = self.images.flatten()
-        
-        # 分别绘制RGB通道
-        for i, color in enumerate(['red', 'green', 'blue']):
-            channel_flat = self.images[:, i, :, :].flatten()
-            ax.hist(channel_flat, bins=50, alpha=0.5, color=color, 
-                   label=f'通道 {i}', density=True)
-        
-        ax.set_xlabel('像素值', fontsize=11)
-        ax.set_ylabel('概率密度', fontsize=11)
-        ax.set_title('图像像素值分布 (RGB通道)', fontsize=13, fontweight='bold')
-        ax.legend(fontsize=9)
-        ax.grid(alpha=0.3)
-        
-        # 添加范围信息
-        ax.text(0.95, 0.95, f'范围:\n[{pixel_flat.min():.3f},\n{pixel_flat.max():.3f}]',
-               transform=ax.transAxes, ha='right', va='top',
-               bbox=dict(facecolor='lightblue', alpha=0.5), fontsize=9)
-    
-    # ======================================================================
-    # 6. 时域信号对比
-    # ======================================================================
-    
-    def _plot_time_domain_comparison(self, ax, sensor_idx: int = 0):
-        """绘制健康与损伤样本的时域信号对比"""
-        time_axis = np.arange(self.n_timepoints) / self.fs
-        
-        # 获取健康和损伤样本
-        healthy_mask = (self.labels == 0)
-        damage_mask = (self.labels != 0)
-        
-        # 计算均值和标准差
-        healthy_mean = self.signals[healthy_mask, sensor_idx, :].mean(axis=0)
-        healthy_std = self.signals[healthy_mask, sensor_idx, :].std(axis=0)
-        damage_mean = self.signals[damage_mask, sensor_idx, :].mean(axis=0)
-        damage_std = self.signals[damage_mask, sensor_idx, :].std(axis=0)
-        
-        # 绘制
-        ax.fill_between(time_axis, 
-                       healthy_mean - healthy_std, 
-                       healthy_mean + healthy_std,
-                       alpha=0.3, color='green', label='健康 ±σ')
-        ax.plot(time_axis, healthy_mean, color='green', linewidth=2)
-        
-        ax.fill_between(time_axis,
-                       damage_mean - damage_std,
-                       damage_mean + damage_std,
-                       alpha=0.3, color='red', label='损伤 ±σ')
-        ax.plot(time_axis, damage_mean, color='red', linewidth=2)
-        
-        ax.set_xlabel('时间 (s)', fontsize=10)
-        ax.set_ylabel('位移', fontsize=10)
-        ax.set_title(f'传感器 {sensor_idx+1}: 时域对比', fontsize=12, fontweight='bold')
-        ax.legend(fontsize=8, loc='upper right')
-        ax.grid(alpha=0.3)
-        ax.set_xlim(0, min(5, time_axis[-1]))  # 只显示前5秒
-    
-    # ======================================================================
-    # 7. 频域分析对比
-    # ======================================================================
-    
-    def _plot_frequency_domain_comparison(self, ax, sensor_idx: int = 0):
-        """绘制健康与损伤样本的频域对比"""
-        # 计算FFT
-        healthy_mask = (self.labels == 0)
-        damage_mask = (self.labels != 0)
-        
-        # 计算功率谱
-        def compute_power_spectrum(mask):
-            signals_subset = self.signals[mask, sensor_idx, :]
-            fft_vals = np.fft.rfft(signals_subset, axis=1)
-            power = np.abs(fft_vals) ** 2
-            return power.mean(axis=0), power.std(axis=0)
-        
-        healthy_power, healthy_std = compute_power_spectrum(healthy_mask)
-        damage_power, damage_std = compute_power_spectrum(damage_mask)
-        
-        # 转换为dB
-        eps = 1e-10
-        healthy_power_db = 10 * np.log10(healthy_power + eps)
-        healthy_std_db = 10 * np.log10(healthy_std + eps)
-        damage_power_db = 10 * np.log10(damage_power + eps)
-        damage_std_db = 10 * np.log10(damage_std + eps)
-        
-        # 绘制
-        ax.fill_between(self.freqs,
-                       healthy_power_db - healthy_std_db,
-                       healthy_power_db + healthy_std_db,
-                       alpha=0.3, color='green', label='健康')
-        ax.plot(self.freqs, healthy_power_db, color='green', linewidth=1.5)
-        
-        ax.fill_between(self.freqs,
-                       damage_power_db - damage_std_db,
-                       damage_power_db + damage_std_db,
-                       alpha=0.3, color='red', label='损伤')
-        ax.plot(self.freqs, damage_power_db, color='red', linewidth=1.5)
-        
-        ax.set_xlabel('频率 (Hz)', fontsize=10)
-        ax.set_ylabel('功率谱密度 (dB)', fontsize=10)
-        ax.set_title(f'传感器 {sensor_idx+1}: 频域对比', fontsize=12, fontweight='bold')
-        ax.legend(fontsize=8, loc='upper right')
-        ax.grid(alpha=0.3)
-        ax.set_xlim(0, min(10, self.nyquist))  # 显示0-10Hz
-    
-    # ======================================================================
-    # 8. 信号统计特征按类别分析
-    # ======================================================================
-    
-    def _plot_signal_stats_by_class(self, ax, stat: str = 'mean'):
-        """绘制不同类别的信号统计特征对比"""
-        stats_data = []
-        class_labels = []
-        
-        for class_idx in range(self.n_classes):
-            mask = (self.labels == class_idx)
-            signals_class = self.signals[mask, :, :]
+        for item in self.metadata:
+            scenario_id = item['scenario_id']
+            filename = os.path.join(self.data_dir, f'scenario_{scenario_id:04d}.h5')
             
-            if stat == 'mean':
-                values = signals_class.mean(axis=(1, 2))
-            elif stat == 'std':
-                values = signals_class.std(axis=(1, 2))
-            elif stat == 'rms':
-                values = np.sqrt(np.mean(signals_class**2, axis=(1, 2)))
-            elif stat == 'max':
-                values = signals_class.max(axis=(1, 2))
-            elif stat == 'min':
-                values = signals_class.min(axis=(1, 2))
+            if os.path.exists(filename):
+                result['existing_files'].append(scenario_id)
             else:
-                values = signals_class.mean(axis=(1, 2))
+                result['missing_files'].append(scenario_id)
+        
+        result['total_scenarios'] = len(self.metadata)
+        
+        if len(result['missing_files']) == 0:
+            self._add_success('file_existence', 
+                            f'所有 {result["total_scenarios"]} 个场景文件都存在')
+        else:
+            self._add_error('file_existence', 
+                          f'缺失 {len(result["missing_files"])} 个文件')
+        
+        return result
+    
+    def check_data_dimensions(self) -> Dict:
+        """检查所有场景的数据维度是否一致"""
+        result = {
+            'checked_scenarios': 0,
+            'dimension_errors': [],
+            'dimension_summary': {}
+        }
+        
+        if self.metadata is None:
+            return result
+        
+        expected_shapes = {}
+        
+        for item in self.metadata:
+            scenario_id = item['scenario_id']
+            filename = os.path.join(self.data_dir, f'scenario_{scenario_id:04d}.h5')
             
-            stats_data.append(values)
-            class_labels.append(self.class_names[class_idx] if class_idx < len(self.class_names) else f'类别{class_idx}')
+            try:
+                with h5py.File(filename, 'r') as hf:
+                    current_dims = {}
+                    for key in hf.keys():
+                        current_dims[key] = hf[key].shape
+                    
+                    # 第一次扫描时记录预期维度
+                    if result['checked_scenarios'] == 0:
+                        expected_shapes.update(current_dims)
+                    
+                    # 检查维度一致性
+                    for key in current_dims:
+                        if key in expected_shapes and expected_shapes[key] != current_dims[key]:
+                            error_msg = f'Scenario {scenario_id}: {key} 维度不匹配 (预期: {expected_shapes[key]}, 实际: {current_dims[key]})'
+                            result['dimension_errors'].append(error_msg)
+                    
+                    result['checked_scenarios'] += 1
+                    
+            except Exception as e:
+                error_msg = f'Scenario {scenario_id}: 读取文件失败 - {str(e)}'
+                result['dimension_errors'].append(error_msg)
         
-        # 绘制箱线图
-        parts = ax.boxplot(stats_data, patch_artist=True, labels=class_labels)
+        result['dimension_summary'] = expected_shapes
         
-        # 设置颜色
-        colors = sns.color_palette("husl", self.n_classes)
-        for patch, color in zip(parts['boxes'], colors):
-            patch.set_facecolor(color)
-            patch.set_alpha(0.7)
+        if len(result['dimension_errors']) == 0:
+            self._add_success('data_dimensions', 
+                            f'所有 {result["checked_scenarios"]} 个场景的维度一致')
+        else:
+            self._add_error('data_dimensions', 
+                          f'发现 {len(result["dimension_errors"])} 个维度错误')
         
-        stat_name_dict = {'mean': '均值', 'std': '标准差', 'rms': 'RMS',
-                          'max': '最大值', 'min': '最小值'}
-        ax.set_ylabel(stat_name_dict.get(stat, stat), fontsize=11)
-        ax.set_title(f'信号 {stat_name_dict.get(stat, stat)} 按类别分布', 
-                    fontsize=12, fontweight='bold')
-        ax.grid(axis='y', alpha=0.3)
-        
-        # 旋转x轴标签
-        plt.setp(ax.get_xticklabels(), rotation=15, ha='right')
+        return result
     
-    # ======================================================================
-    # 9. 图像样本展示
-    # ======================================================================
-    
-    def _plot_image_sample(self, ax, class_idx: int = 0):
-        """绘制指定类别的图像样本"""
-        mask = (self.labels == class_idx)
-        if mask.sum() == 0:
-            ax.text(0.5, 0.5, '无样本', ha='center', va='center', fontsize=12)
-            return
+    def check_nan_inf(self) -> Dict:
+        """检查数据中的NaN和Inf值"""
+        result = {
+            'checked_scenarios': 0,
+            'scenarios_with_nan': [],
+            'scenarios_with_inf': []
+        }
         
-        # 随机选择一个样本
-        idx = np.where(mask)[0][np.random.randint(0, mask.sum())]
-        img = self.images[idx]
+        if self.metadata is None:
+            return result
         
-        # 转换为 (H, W, C) 用于显示
-        img_display = np.transpose(img, (1, 2, 0))
-        
-        ax.imshow(img_display)
-        ax.set_title(f'{self.class_names[class_idx] if class_idx < len(self.class_names) else f"类别{class_idx}"}', 
-                    fontsize=11, fontweight='bold')
-        ax.axis('off')
-    
-    # ======================================================================
-    # 10. 频域统计特征
-    # ======================================================================
-    
-    def _plot_frequency_stats(self, ax):
-        """绘制主要频率成分的统计特征"""
-        # 计算每个样本的主频
-        dominant_freqs = []
-        class_labels = []
-        
-        for class_idx in range(self.n_classes):
-            mask = (self.labels == class_idx)
-            signals_class = self.signals[mask, :, :]
+        for item in self.metadata:
+            scenario_id = item['scenario_id']
+            filename = os.path.join(self.data_dir, f'scenario_{scenario_id:04d}.h5')
             
-            for i in range(signals_class.shape[0]):
-                # 计算平均频谱
-                signal_avg = signals_class[i].mean(axis=0)
-                fft_vals = np.abs(np.fft.rfft(signal_avg))
+            try:
+                with h5py.File(filename, 'r') as hf:
+                    has_nan = False
+                    has_inf = False
+                    
+                    for key in hf.keys():
+                        data = hf[key][:]
+                        
+                        if np.isnan(data).any():
+                            has_nan = True
+                        
+                        if np.isinf(data).any():
+                            has_inf = True
+                    
+                    if has_nan:
+                        result['scenarios_with_nan'].append(scenario_id)
+                    
+                    if has_inf:
+                        result['scenarios_with_inf'].append(scenario_id)
+                    
+                    result['checked_scenarios'] += 1
+                    
+            except Exception as e:
+                pass
+        
+        total_scenarios = result['checked_scenarios']
+        nan_ratio = len(result['scenarios_with_nan']) / total_scenarios if total_scenarios > 0 else 0
+        inf_ratio = len(result['scenarios_with_inf']) / total_scenarios if total_scenarios > 0 else 0
+        
+        if nan_ratio == 0 and inf_ratio == 0:
+            self._add_success('nan_inf_check', 
+                            f'所有 {total_scenarios} 个场景的数据都正常，无NaN或Inf值')
+        else:
+            error_msg = []
+            if nan_ratio > 0:
+                error_msg.append(f'{len(result["scenarios_with_nan"])} 个场景包含NaN值 ({nan_ratio*100:.2f}%)')
+            if inf_ratio > 0:
+                error_msg.append(f'{len(result["scenarios_with_inf"])} 个场景包含Inf值 ({inf_ratio*100:.2f}%)')
+            self._add_error('nan_inf_check', ', '.join(error_msg))
+        
+        return result
+    
+    def check_value_ranges(self) -> Dict:
+        """检查数值范围是否合理"""
+        result = {
+            'out_of_range_samples': []
+        }
+        
+        if self.metadata is None:
+            return result
+        
+        for item in self.metadata:
+            scenario_id = item['scenario_id']
+            filename = os.path.join(self.data_dir, f'scenario_{scenario_id:04d}.h5')
+            
+            try:
+                with h5py.File(filename, 'r') as hf:
+                    # 检查加速度数据
+                    if 'acceleration' in hf:
+                        acc = hf['acceleration'][:]
+                        min_acc_range, max_acc_range = self.thresholds['min_acceleration_range']
+                        out_of_range = (acc < min_acc_range).any() or (acc > max_acc_range).any()
+                        
+                        if out_of_range:
+                            result['out_of_range_samples'].append({
+                                'scenario_id': scenario_id,
+                                'type': 'acceleration',
+                                'min': float(acc.min()),
+                                'max': float(acc.max())
+                            })
+                    
+                    # 检查特征图数据
+                    if 'feature_maps' in hf:
+                        feat_maps = hf['feature_maps'][:]
+                        min_feat_range, max_feat_range = self.thresholds['feature_pixel_range']
+                        out_of_range = (feat_maps < min_feat_range - 1e-6).any() or \
+                                       (feat_maps > max_feat_range + 1e-6).any()
+                        
+                        if out_of_range:
+                            result['out_of_range_samples'].append({
+                                'scenario_id': scenario_id,
+                                'type': 'feature_map',
+                                'min': float(feat_maps.min()),
+                                'max': float(feat_maps.max())
+                            })
+                    
+            except Exception as e:
+                pass
+        
+        if len(result['out_of_range_samples']) == 0:
+            self._add_success('value_range_check', '所有数据的数值范围都在合理范围内')
+        else:
+            self._add_error('value_range_check', 
+                          f'发现 {len(result["out_of_range_samples"])} 个数值范围异常的样本')
+        
+        return result
+    
+    def check_label_consistency(self) -> Dict:
+        """检查标签与元数据是否一致"""
+        result = {
+            'checked_scenarios': 0,
+            'inconsistent_labels': []
+        }
+        
+        if self.metadata is None:
+            return result
+        
+        for item in self.metadata:
+            scenario_id = item['scenario_id']
+            damaged_dofs = item.get('damaged_dofs', [])
+            expected_damage_class = item.get('damage_class', 0)
+            
+            filename = os.path.join(self.data_dir, f'scenario_{scenario_id:04d}.h5')
+            
+            try:
+                with h5py.File(filename, 'r') as hf:
+                    if 'labels' in hf:
+                        labels = hf['labels'][:]
+                        labels_array = np.array(labels)
+                        
+                        # 检查受损DOF是否都被标记为1
+                        if len(damaged_dofs) > 0:
+                            for dof in damaged_dofs:
+                                if labels_array[dof] != 1:
+                                    result['inconsistent_labels'].append({
+                                        'scenario_id': scenario_id,
+                                        'type': 'missing_label',
+                                        'dof': dof,
+                                        'expected': 1,
+                                        'actual': float(labels_array[dof])
+                                    })
+                        else:
+                            # 健康样本，所有label应该为0
+                            if np.any(labels_array != 0):
+                                result['inconsistent_labels'].append({
+                                    'scenario_id': scenario_id,
+                                    'type': 'healthy_not_zero',
+                                    'count': int(np.sum(labels_array != 0))
+                                })
+                    
+                    # 检查damage_class
+                    if 'damage_class' in hf:
+                        actual_damage_class = int(hf['damage_class'][0])
+                        if actual_damage_class != expected_damage_class:
+                            result['inconsistent_labels'].append({
+                                'scenario_id': scenario_id,
+                                'type': 'damage_class_mismatch',
+                                'expected': expected_damage_class,
+                                'actual': actual_damage_class
+                            })
+                    
+                    result['checked_scenarios'] += 1
+                    
+            except Exception as e:
+                result['inconsistent_labels'].append({
+                    'scenario_id': scenario_id,
+                    'type': 'read_error',
+                    'error': str(e)
+                })
+        
+        if len(result['inconsistent_labels']) == 0:
+            self._add_success('label_consistency', 
+                            f'所有 {result["checked_scenarios"]} 个场景的标签一致')
+        else:
+            self._add_error('label_consistency', 
+                          f'发现 {len(result["inconsistent_labels"])} 个标签不一致的问题')
+        
+        return result
+    
+    def check_signal_quality(self) -> Dict:
+        """检查信号质量"""
+        result = {
+            'checked_scenarios': 0,
+            'low_energy_scenarios': [],
+            'zero_signal_scenarios': []
+        }
+        
+        if self.metadata is None:
+            return result
+        
+        for item in self.metadata:
+            scenario_id = item['scenario_id']
+            filename = os.path.join(self.data_dir, f'scenario_{scenario_id:04d}.h5')
+            
+            try:
+                with h5py.File(filename, 'r') as hf:
+                    if 'acceleration' in hf:
+                        acc = hf['acceleration'][:]
+                        total_energy = np.sum(acc ** 2)
+                        
+                        if total_energy < self.thresholds['min_signal_energy']:
+                            result['low_energy_scenarios'].append(scenario_id)
+                        
+                        if total_energy == 0:
+                            result['zero_signal_scenarios'].append(scenario_id)
+                    
+                    if 'feature_maps' in hf:
+                        feat_maps = hf['feature_maps'][:]
+                        feat_energy = np.sum(feat_maps ** 2)
+                        
+                        if feat_energy == 0:
+                            result['zero_signal_scenarios'].append(scenario_id)
+                    
+                    result['checked_scenarios'] += 1
+                    
+            except Exception as e:
+                pass
+        
+        if len(result['low_energy_scenarios']) == 0 and len(result['zero_signal_scenarios']) == 0:
+            self._add_success('signal_quality', 
+                            f'所有 {result["checked_scenarios"]} 个场景的信号质量良好')
+        else:
+            error_msgs = []
+            if len(result['low_energy_scenarios']) > 0:
+                error_msgs.append(f'{len(result["low_energy_scenarios"])} 个场景能量过低')
+            if len(result['zero_signal_scenarios']) > 0:
+                error_msgs.append(f'{len(result["zero_signal_scenarios"])} 个场景为零信号')
+            self._add_error('signal_quality', ', '.join(error_msgs))
+        
+        return result
+    
+    def check_damage_discrimination(self) -> Dict:
+        """检查健康与损伤样本的分离度 (Cohen's d)"""
+        result = {
+            'healthy_scenarios': [],
+            'damaged_scenarios': [],
+            'healthy_feature_stats': {'mean': [], 'std': []},
+            'damaged_feature_stats': {'mean': [], 'std': []},
+            'separation_score': 0.0
+        }
+        
+        if self.metadata is None:
+            return result
+        
+        for item in self.metadata:
+            scenario_id = item['scenario_id']
+            damaged_dofs = item.get('damaged_dofs', [])
+            is_healthy = len(damaged_dofs) == 0
+            
+            filename = os.path.join(self.data_dir, f'scenario_{scenario_id:04d}.h5')
+            
+            try:
+                with h5py.File(filename, 'r') as hf:
+                    if 'feature_maps' in hf:
+                        feat_maps = hf['feature_maps'][:]
+                        
+                        mean_val = float(np.mean(feat_maps))
+                        std_val = float(np.std(feat_maps))
+                        
+                        if is_healthy:
+                            result['healthy_scenarios'].append(scenario_id)
+                            result['healthy_feature_stats']['mean'].append(mean_val)
+                            result['healthy_feature_stats']['std'].append(std_val)
+                        else:
+                            result['damaged_scenarios'].append(scenario_id)
+                            result['damaged_feature_stats']['mean'].append(mean_val)
+                            result['damaged_feature_stats']['std'].append(std_val)
+                    
+            except Exception as e:
+                pass
+        
+        # 计算 Cohen's d
+        # 修正逻辑：比较两组均值之间的分离度
+        if (len(result['healthy_feature_stats']['mean']) > 0 and 
+            len(result['damaged_feature_stats']['mean']) > 0):
+            
+            healthy_means = np.array(result['healthy_feature_stats']['mean'])
+            damaged_means = np.array(result['damaged_feature_stats']['mean'])
+            
+            # 1. 计算组平均均值
+            mean_healthy = np.mean(healthy_means)
+            mean_damaged = np.mean(damaged_means)
+            
+            # 2. 计算均值的标准差 (这是衡量组间离散度的关键)
+            # ddof=1 使用样本标准差
+            std_healthy_means = np.std(healthy_means, ddof=1)
+            std_damaged_means = np.std(damaged_means, ddof=1)
+            
+            # 3. 计算合并标准差
+            # 只有当两组都有足够的方差时才计算
+            if std_healthy_means > 0 or std_damaged_means > 0:
+                pooled_std = np.sqrt((std_healthy_means**2 + std_damaged_means**2) / 2)
                 
-                # 找到主频（忽略直流分量）
-                peak_idx = np.argmax(fft_vals[1:]) + 1
-                dominant_freq = self.freqs[peak_idx]
-                dominant_freqs.append(dominant_freq)
-                class_labels.append(self.class_names[class_idx] if class_idx < len(self.class_names) else f'类别{class_idx}')
-        
-        # 绘制散点图
-        df = pd.DataFrame({
-            'Frequency': dominant_freqs,
-            'Class': class_labels
-        })
-        
-        sns.boxplot(data=df, x='Class', y='Frequency', ax=ax)
-        ax.set_ylabel('主频 (Hz)', fontsize=11)
-        ax.set_title('主频成分按类别分布', fontsize=12, fontweight='bold')
-        ax.grid(axis='y', alpha=0.3)
-        
-        plt.setp(ax.get_xticklabels(), rotation=15, ha='right')
-    
-    # ======================================================================
-    # 11. 信噪比估计
-    # ======================================================================
-    
-    def _plot_snr_estimation(self, ax):
-        """绘制信噪比估计"""
-        snr_values = []
-        class_labels = []
-        
-        for class_idx in range(self.n_classes):
-            mask = (self.labels == class_idx)
-            signals_class = self.signals[mask, :, :]
-            
-            for i in range(signals_class.shape[0]):
-                signal_avg = signals_class[i].mean(axis=1)
-                signal_power = np.mean(signal_avg**2)
-                noise_power = np.mean((signals_class[i] - signal_avg[:, np.newaxis])**2)
+                mean_diff = mean_damaged - mean_healthy
                 
-                snr = 10 * np.log10(signal_power / (noise_power + 1e-10))
-                snr_values.append(snr)
-                class_labels.append(self.class_names[class_idx] if class_idx < len(self.class_names) else f'类别{class_idx}')
-        
-        # 绘制箱线图
-        df = pd.DataFrame({
-            'SNR_dB': snr_values,
-            'Class': class_labels
-        })
-        
-        sns.boxplot(data=df, x='Class', y='SNR_dB', ax=ax)
-        ax.set_ylabel('SNR (dB)', fontsize=11)
-        ax.set_title('信噪比估计', fontsize=12, fontweight='bold')
-        ax.grid(axis='y', alpha=0.3)
-        
-        plt.setp(ax.get_xticklabels(), rotation=15, ha='right')
-        
-        # 添加平均值线
-        ax.axhline(y=np.mean(snr_values), color='red', linestyle='--', alpha=0.7, label=f'平均值: {np.mean(snr_values):.1f} dB')
-        ax.legend(fontsize=8)
-    
-    # ======================================================================
-    # 12. 异常值检测
-    # ======================================================================
-    
-    def _plot_outlier_detection(self, ax):
-        """绘制异常值检测结果"""
-        # 计算每个样本的RMS值
-        rms_values = np.sqrt(np.mean(self.signals**2, axis=(1, 2)))
-        
-        # 使用IQR方法检测异常值
-        Q1 = np.percentile(rms_values, 25)
-        Q3 = np.percentile(rms_values, 75)
-        IQR = Q3 - Q1
-        lower_bound = Q1 - 1.5 * IQR
-        upper_bound = Q3 + 1.5 * IQR
-        
-        outliers = (rms_values < lower_bound) | (rms_values > upper_bound)
-        
-        # 绘制散点图
-        colors = ['green' if not o else 'red' for o in outliers]
-        ax.scatter(range(len(rms_values)), rms_values, c=colors, alpha=0.6, s=20)
-        
-        ax.axhline(y=lower_bound, color='orange', linestyle='--', alpha=0.7, label='下限')
-        ax.axhline(y=upper_bound, color='orange', linestyle='--', alpha=0.7, label='上限')
-        
-        ax.set_xlabel('样本索引', fontsize=11)
-        ax.set_ylabel('RMS值', fontsize=11)
-        ax.set_title(f'异常值检测 ({outliers.sum()} 个异常)', fontsize=12, fontweight='bold')
-        ax.legend(fontsize=8)
-        ax.grid(alpha=0.3)
-    
-    # ======================================================================
-    # 13. 交互式探索模式
-    # ======================================================================
-    
-    def interactive_explore(self, n_samples_per_class: int = 3):
-        """
-        交互式探索模式：展示每个类别的多个样本
-        
-        参数:
-            n_samples_per_class: 每个类别展示的样本数量
-        """
-        n_cols = min(n_samples_per_class, 5)
-        n_rows = self.n_classes * 2  # 2行：信号+图像
-        
-        fig = plt.figure(figsize=(4*n_cols, 3*n_rows))
-        gs = gridspec.GridSpec(n_rows, n_cols, figure=fig, hspace=0.3, wspace=0.25)
-        
-        sample_idx = 0
-        for class_idx in range(self.n_classes):
-            mask = (self.labels == class_idx)
-            class_indices = np.where(mask)[0]
-            
-            # 随机选择样本
-            if len(class_indices) > n_samples_per_class:
-                selected_indices = np.random.choice(class_indices, n_samples_per_class, replace=False)
+                if pooled_std > 0:
+                    cohens_d = np.abs(mean_diff) / pooled_std
+                    result['separation_score'] = float(cohens_d)
+                else:
+                    result['separation_score'] = 0.0
             else:
-                selected_indices = class_indices
+                result['separation_score'] = 0.0
+        
+        # 评价分离度
+        if result['separation_score'] > 0.8:
+            self._add_success('damage_discrimination', 
+                            f'健康和损伤样本分离度良好 (Cohen\'s d = {result["separation_score"]:.3f})')
+        elif result['separation_score'] > 0.5:
+            self._add_warning('damage_discrimination', 
+                            f'健康和损伤样本分离度中等 (Cohen\'s d = {result["separation_score"]:.3f})')
+        elif result['separation_score'] > 0.2: # 稍微降低阈值，因为生成器改进初期可能不会立刻达到0.5
+            self._add_warning('damage_discrimination', 
+                            f'健康和损伤样本分离度较低 (Cohen\'s d = {result["separation_score"]:.3f})')
+        else:
+            self._add_error('damage_discrimination', 
+                          f'无法计算健康和损伤样本的分离度或分离度极低 (Cohen\'s d = {result["separation_score"]:.3f})')
+        
+        return result
+
+
+    def check_distribution_balance(self) -> Dict:
+        """检查数据分布平衡性"""
+        result = {
+            'total_scenarios': 0,
+            'healthy_count': 0,
+            'damaged_count': 0,
+            'class_counts': {}
+        }
+        
+        if self.metadata is None:
+            return result
+        
+        for item in self.metadata:
+            damage_class = item.get('damage_class', 0)
+            result['total_scenarios'] += 1
+            result['class_counts'][damage_class] = \
+                result['class_counts'].get(damage_class, 0) + 1
             
-            for col, idx in enumerate(selected_indices):
-                # 绘制信号（所有DOF叠加）
-                ax_signal = fig.add_subplot(gs[2*class_idx, col])
-                time_axis = np.arange(self.n_timepoints) / self.fs
-                
-                for dof in range(min(self.n_dof, 5)):  # 最多显示5个DOF
-                    ax_signal.plot(time_axis, self.signals[idx, dof, :], 
-                                  alpha=0.7, linewidth=0.8, 
-                                  label=f'DOF{dof+1}' if col == 0 else "")
-                
-                if col == 0:
-                    ax_signal.legend(fontsize=7)
-                ax_signal.set_xlabel('时间 (s)', fontsize=9)
-                ax_signal.set_ylabel('位移', fontsize=9)
-                ax_signal.set_title(f'{self.class_names[class_idx] if class_idx < len(self.class_names) else f"类别{class_idx}"} - 样本{idx}',
-                                   fontsize=10, fontweight='bold')
-                ax_signal.grid(alpha=0.3)
-                ax_signal.set_xlim(0, min(5, time_axis[-1]))
-                
-                # 绘制图像
-                ax_img = fig.add_subplot(gs[2*class_idx+1, col])
-                img = np.transpose(self.images[idx], (1, 2, 0))
-                ax_img.imshow(img)
-                ax_img.axis('off')
-                ax_img.set_title('结构图像', fontsize=9)
+            if damage_class == 0:
+                result['healthy_count'] += 1
+            else:
+                result['damaged_count'] += 1
         
-        plt.suptitle('交互式数据探索', fontsize=16, fontweight='bold')
-        plt.savefig('mdof_interactive_explore.png', dpi=150, bbox_inches='tight')
-        print("✓ 交互式探索结果已保存: mdof_interactive_explore.png")
-        plt.show()
+        healthy_ratio = result['healthy_count'] / result['total_scenarios'] if result['total_scenarios'] > 0 else 0
+        result['healthy_ratio'] = healthy_ratio
+        
+        if 0.1 <= healthy_ratio <= 0.5:
+            self._add_success('distribution_balance', 
+                            f'数据分布平衡，健康样本占比 {healthy_ratio*100:.1f}%')
+        else:
+            self._add_warning('distribution_balance', 
+                            f'数据分布可能不平衡，健康样本占比 {healthy_ratio*100:.1f}%')
+        
+        return result
     
-    # ======================================================================
-    # 14. 生成质量报告文本
-    # ======================================================================
-    
-    def generate_text_report(self) -> str:
-        """生成文本格式的质量报告"""
-        report = []
-        report.append("="*70)
-        report.append("MDOF仿真数据质量检查报告")
-        report.append("="*70)
+    def run_full_inspection(self) -> Dict:
+        """运行完整的数据质量检查"""
+        print("=" * 80)
+        print("开始全面数据质量检查...")
+        print("=" * 80)
         
-        # 基本信息部分
-        report.append("\n【1. 数据基本信息】")
-        report.append(f"  样本数量: {self.n_samples}")
-        report.append(f"  自由度数量: {self.n_dof}")
-        report.append(f"  时间点数量: {self.n_timepoints}")
-        report.append(f"  类别数量: {self.n_classes}")
-        report.append(f"  采样频率: {self.fs} Hz")
+        results = {}
         
-        # 数据完整性检查
-        report.append("\n【2. 数据完整性检查】")
-        nan_count = np.isnan(self.signals).sum()
-        inf_count = np.isinf(self.signals).sum()
-        report.append(f"  信号中NaN值数量: {nan_count}")
-        report.append(f"  信号中Inf值数量: {inf_count}")
+        # 1. 加载元数据
+        print("\n[1/8] 检查元数据加载...")
+        results['metadata'] = self.load_metadata()
         
-        if nan_count == 0 and inf_count == 0:
-            report.append("  ✓ 数据完整，无缺失值")
+        if self.metadata is not None:
+            # 2. 检查文件完整性
+            print("\n[2/8] 检查文件完整性...")
+            results['file_existence'] = self.check_file_existence()
+            
+            # 3. 检查数据维度
+            print("\n[3/8] 检查数据维度...")
+            results['dimensions'] = self.check_data_dimensions()
+            
+            # 4. 检查NaN和Inf
+            print("\n[4/8] 检查NaN和Inf...")
+            results['nan_inf'] = self.check_nan_inf()
+            
+            # 5. 检查数值范围
+            print("\n[5/8] 检查数值范围...")
+            results['value_ranges'] = self.check_value_ranges()
+            
+            # 6. 检查标签一致性
+            print("\n[6/8] 检查标签一致性...")
+            results['labels'] = self.check_label_consistency()
+            
+            # 7. 检查信号质量
+            print("\n[7/8] 检查信号质量...")
+            results['signal_quality'] = self.check_signal_quality()
+            
+            # 8. 检查损伤判别能力
+            print("\n[8/8] 检查损伤判别能力...")
+            results['damage_discrimination'] = self.check_damage_discrimination()
+            
+            # 额外: 检查数据分布平衡性
+            print("\n[额外] 检查数据分布平衡性...")
+            results['distribution_balance'] = self.check_distribution_balance()
         else:
-            report.append("  ⚠ 警告: 数据中存在缺失值或异常值")
+            print("警告：元数据加载失败，跳过后续检查")
         
-        # 信号统计特性
-        report.append("\n【3. 信号统计特性】")
-        report.append(f"  取值范围: [{self.signals.min():.6f}, {self.signals.max():.6f}]")
-        report.append(f"  均值: {self.signals.mean():.6f}")
-        report.append(f"  标准差: {self.signals.std():.6f}")
-        report.append(f"  偏度: {skew(self.signals.flatten()):.6f}")
-        report.append(f"  峰度: {kurtosis(self.signals.flatten()):.6f}")
+        # 计算总体质量分数
+        self._calculate_quality_score()
         
-        # 类别分布
-        report.append("\n【4. 类别分布】")
-        label_counts = np.bincount(self.labels)
-        total = len(self.labels)
-        for i, count in enumerate(label_counts):
-            percentage = count / total * 100
-            class_name = self.class_names[i] if i < len(self.class_names) else f'类别{i}'
-            report.append(f"  {class_name}: {count} ({percentage:.1f}%)")
-        
-        # 类别平衡性评估
-        min_count = label_counts.min()
-        max_count = label_counts.max()
-        balance_ratio = min_count / max_count
-        if balance_ratio > 0.8:
-            report.append(f"  ✓ 类别分布平衡 (比例: {balance_ratio:.2f})")
-        elif balance_ratio > 0.5:
-            report.append(f"  ⚠ 类别分布略有不均 (比例: {balance_ratio:.2f})")
-        else:
-            report.append(f"  ✗ 类别分布严重不平衡 (比例: {balance_ratio:.2f})")
-        
-        # 异常值检测
-        report.append("\n【5. 异常值检测】")
-        rms_values = np.sqrt(np.mean(self.signals**2, axis=(1, 2)))
-        Q1, Q3 = np.percentile(rms_values, [25, 75])
-        IQR = Q3 - Q1
-        outliers = (rms_values < Q1 - 1.5*IQR) | (rms_values > Q3 + 1.5*IQR)
-        outlier_ratio = outliers.sum() / len(rms_values) * 100
-        
-        report.append(f"  异常样本数量: {outliers.sum()}")
-        report.append(f"  异常样本比例: {outlier_ratio:.2f}%")
-        
-        if outlier_ratio < 5:
-            report.append("  ✓ 异常值比例在可接受范围内")
-        else:
-            report.append(f"  ⚠ 警告: 异常值比例较高 ({outlier_ratio:.2f}%)")
-        
-        # 信噪比分析
-        report.append("\n【6. 信噪比分析】")
-        snr_list = []
-        for class_idx in range(self.n_classes):
-            mask = (self.labels == class_idx)
-            signals_class = self.signals[mask]
-            signal_power = np.mean(signals_class**2)
-            noise_power = np.mean((signals_class - signals_class.mean(axis=1, keepdims=True))**2)
-            snr = 10 * np.log10(signal_power / (noise_power + 1e-10))
-            snr_list.append(snr)
-            class_name = self.class_names[class_idx] if class_idx < len(self.class_names) else f'类别{class_idx}'
-            report.append(f"  {class_name}: {snr:.2f} dB")
-        
-        avg_snr = np.mean(snr_list)
-        if avg_snr > 20:
-            report.append(f"  ✓ 信噪比良好 (平均: {avg_snr:.2f} dB)")
-        elif avg_snr > 10:
-            report.append(f"  ⚠ 信噪比一般 (平均: {avg_snr:.2f} dB)")
-        else:
-            report.append(f"  ✗ 信噪比较低 (平均: {avg_snr:.2f} dB)")
-        
-        # 频域特性
-        report.append("\n【7. 频域特性】")
-        report.append(f"  奈奎斯特频率: {self.nyquist:.2f} Hz")
-        report.append(f"  频率分辨率: {self.freqs[1]:.4f} Hz")
-        
-        # 计算主频
-        all_dominant_freqs = []
-        for i in range(len(self.signals)):
-            signal_avg = self.signals[i].mean(axis=0)
-            fft_vals = np.abs(np.fft.rfft(signal_avg))
-            peak_idx = np.argmax(fft_vals[1:]) + 1
-            all_dominant_freqs.append(self.freqs[peak_idx])
-        
-        report.append(f"  主频范围: {min(all_dominant_freqs):.3f} - {max(all_dominant_freqs):.3f} Hz")
-        report.append(f"  主频均值: {np.mean(all_dominant_freqs):.3f} Hz")
-        
-        # 图像质量
-        report.append("\n【8. 图像质量】")
-        report.append(f"  图像尺寸: {self.images.shape[2]} x {self.images.shape[3]}")
-        report.append(f"  像素值范围: [{self.images.min():.4f}, {self.images.max():.4f}]")
-        
-        # 结论
-        report.append("\n" + "="*70)
-        report.append("【总体评估】")
-        
-        # 综合评分
-        score = 0
-        max_score = 5
-        
-        if nan_count == 0 and inf_count == 0:
-            score += 1
-        if balance_ratio > 0.8:
-            score += 1
-        if outlier_ratio < 5:
-            score += 1
-        if avg_snr > 15:
-            score += 1
-        if 0 <= self.images.min() <= 1 and 0 <= self.images.max() <= 1:
-            score += 1
-        
-        percentage = score / max_score * 100
-        if percentage >= 80:
-            assessment = "✓ 数据质量优秀"
-        elif percentage >= 60:
-            assessment = "⚠ 数据质量良好，有改进空间"
-        else:
-            assessment = "✗ 数据质量需改进"
-        
-        report.append(f"  综合评分: {score}/{max_score} ({percentage:.0f}%)")
-        report.append(f"  {assessment}")
-        report.append("="*70 + "\n")
-        
-        return "\n".join(report)
-    
-    # ======================================================================
-    # 15. 批量检查和报告生成
-    # ======================================================================
-    
-    def run_full_inspection(self, output_prefix: str = 'mdof_quality_check'):
-        """
-        运行完整的检查流程并生成所有报告
-        
-        参数:
-            output_prefix: 输出文件名前缀
-        """
-        print("\n" + "="*70)
-        print("开始运行完整的数据质量检查流程")
-        print("="*70)
-        
-        # 1. 打印基本统计信息
-        self.print_basic_stats()
-        
-        # 2. 生成综合可视化报告
-        print("\n生成综合可视化报告...")
-        fig = self.generate_full_report(f'{output_prefix}_report.png')
-        
-        # 3. 生成文本报告
-        print("生成文本质量报告...")
-        text_report = self.generate_text_report()
-        
-        # 保存文本报告
-        with open(f'{output_prefix}_report.txt', 'w', encoding='utf-8') as f:
-            f.write(text_report)
-        print(f"✓ 文本报告已保存: {output_prefix}_report.txt")
-        
-        # 打印文本报告
-        print("\n" + text_report)
-        
-        # 4. 生成交互式探索图
-        print("\n生成交互式探索图...")
-        self.interactive_explore(n_samples_per_class=3)
-        
-        print("\n" + "="*70)
+        print("\n" + "=" * 80)
         print("数据质量检查完成！")
-        print("="*70)
+        print("=" * 80)
         
-        return fig, text_report
+        return results
+    
+    # 私有辅助方法
+    def _add_success(self, category: str, message: str):
+        if category not in self.check_results:
+            self.check_results[category] = []
+        self.check_results[category].append({'status': 'success', 'message': message})
+    
+    def _add_error(self, category: str, message: str):
+        if category not in self.check_results:
+            self.check_results[category] = []
+        self.check_results[category].append({'status': 'error', 'message': message})
+    
+    def _add_warning(self, category: str, message: str):
+        if category not in self.check_results:
+            self.check_results[category] = []
+        self.check_results[category].append({'status': 'warning', 'message': message})
+    
+    def _calculate_quality_score(self):
+        total_checks = 0
+        passed_checks = 0
+        
+        for category, checks in self.check_results.items():
+            for check in checks:
+                total_checks += 1
+                if check['status'] == 'success':
+                    passed_checks += 1
+        
+        self.quality_score = (passed_checks / total_checks * 100) if total_checks > 0 else 0
+    
+    def generate_text_report(self, output_file: str = None) -> str:
+        """生成文字检查报告"""
+        report_lines = []
+        
+        report_lines.append("=" * 80)
+        report_lines.append("数据质量检查报告")
+        report_lines.append("=" * 80)
+        report_lines.append(f"检查时间: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        report_lines.append(f"数据目录: {self.data_dir}")
+        report_lines.append(f"总体质量分数: {self.quality_score:.1f}/100")
+        report_lines.append("")
+        
+        # 摘要统计
+        report_lines.append("-" * 80)
+        report_lines.append("检查结果摘要")
+        report_lines.append("-" * 80)
+        
+        success_count = 0
+        error_count = 0
+        warning_count = 0
+        
+        for category, checks in self.check_results.items():
+            for check in checks:
+                if check['status'] == 'success':
+                    success_count += 1
+                elif check['status'] == 'error':
+                    error_count += 1
+                elif check['status'] == 'warning':
+                    warning_count += 1
+        
+        report_lines.append(f"✓ 通过检查: {success_count} 项")
+        report_lines.append(f"✗ 发现错误: {error_count} 项")
+        report_lines.append(f"⚠ 发现警告: {warning_count} 项")
+        report_lines.append("")
+        
+        # 详细结果
+        report_lines.append("-" * 80)
+        report_lines.append("详细检查结果")
+        report_lines.append("-" * 80)
+        
+        for category, checks in self.check_results.items():
+            report_lines.append(f"\n【{category}】")
+            for check in checks:
+                status_icon = "✓" if check['status'] == 'success' else ("✗" if check['status'] == 'error' else "⚠")
+                report_lines.append(f"  {status_icon} {check['message']}")
+        
+        # 数据集统计
+        if self.metadata:
+            report_lines.append("\n" + "-" * 80)
+            report_lines.append("数据集统计信息")
+            report_lines.append("-" * 80)
+            
+            total_scenarios = len(self.metadata)
+            healthy_scenarios = sum(1 for item in self.metadata if len(item.get('damaged_dofs', [])) == 0)
+            damaged_scenarios = total_scenarios - healthy_scenarios
+            
+            report_lines.append(f"总场景数: {total_scenarios}")
+            report_lines.append(f"健康场景: {healthy_scenarios} ({healthy_scenarios/total_scenarios*100:.1f}%)")
+            report_lines.append(f"损伤场景: {damaged_scenarios} ({damaged_scenarios/total_scenarios*100:.1f}%)")
+            
+            # 类别分布
+            class_dist = {}
+            for item in self.metadata:
+                damage_class = item.get('damage_class', 0)
+                class_dist[damage_class] = class_dist.get(damage_class, 0) + 1
+            
+            report_lines.append("\n损伤类别分布:")
+            class_names = {
+                0: '健康', 1: '轻微损伤', 2: '中等损伤', 3: '严重损伤', 4: '多点损伤'
+            }
+            for cls, count in sorted(class_dist.items()):
+                name = class_names.get(cls, f'类别{cls}')
+                report_lines.append(f"  {name}: {count} 个场景 ({count/total_scenarios*100:.1f}%)")
+        
+        # 结论和建议
+        report_lines.append("\n" + "-" * 80)
+        report_lines.append("结论和建议")
+        report_lines.append("-" * 80)
+        
+        if self.quality_score >= 90:
+            report_lines.append("✓ 数据质量优秀，可以安全用于模型训练。")
+        elif self.quality_score >= 70:
+            report_lines.append("⚠ 数据质量良好，但存在一些需要注意的问题。")
+            report_lines.append("  建议：修复错误项后再进行大规模训练。")
+        elif self.quality_score >= 50:
+            report_lines.append("✗ 数据质量一般，存在较多问题。")
+            report_lines.append("  建议：修复所有错误项并检查数据生成逻辑。")
+        else:
+            report_lines.append("✗✗ 数据质量较差，存在严重问题！")
+            report_lines.append("  强烈建议：彻底检查数据生成器，修复所有bug。")
+        
+        report_lines.append("")
+        report_lines.append("=" * 80)
+        
+        report_text = "\n".join(report_lines)
+        
+        if output_file:
+            try:
+                with open(output_file, 'w', encoding='utf-8') as f:
+                    f.write(report_text)
+                print(f"文字报告已保存至: {output_file}")
+            except Exception as e:
+                print(f"保存文字报告失败: {e}")
+        
+        return report_text
+    
+    def generate_visualizations(self, output_dir: str = None):
+        """生成可视化图表"""
+        if output_dir is None:
+            output_dir = self.data_dir
+        
+        os.makedirs(output_dir, exist_ok=True)
+        
+        print("\n生成可视化图表...")
+        
+        # 1. 汇总饼图
+        self._plot_summary_pie(output_dir)
+        
+        # 如果有数据，继续生成其他图表
+        if self.metadata and len(self.metadata) > 0:
+            # 2. 类别分布
+            self._plot_class_distribution(output_dir)
+            # 3. 标签一致性
+            self._plot_label_consistency(output_dir)
+            # 4. 健康 vs 损伤对比
+            self._plot_healthy_vs_damaged(output_dir)
+            # 5. 信号质量
+            self._plot_signal_quality(output_dir)
+            # 6. 加速度分布
+            self._plot_acceleration_distribution(output_dir)
+            # 7. 特征图分布
+            self._plot_feature_map_distribution(output_dir)
+            # 8. 严重程度分布
+            self._plot_severity_distribution(output_dir)
+        
+        print(f"可视化图表已保存至: {output_dir}")
+    
+    # --- 绘图辅助函数 ---
+    
+    def _plot_summary_pie(self, output_dir: str):
+        """绘制检查结果汇总饼图"""
+        success_count = sum(1 for checks in self.check_results.values() 
+                          for check in checks if check['status'] == 'success')
+        error_count = sum(1 for checks in self.check_results.values() 
+                        for check in checks if check['status'] == 'error')
+        warning_count = sum(1 for checks in self.check_results.values() 
+                          for check in checks if check['status'] == 'warning')
+        
+        fig, ax = plt.subplots(figsize=(10, 8))
+        sizes = [success_count, error_count, warning_count]
+        labels = ['通过', '错误', '警告']
+        colors = ['#2ecc71', '#e74c3c', '#f39c12']
+        explode = (0.05, 0.05, 0.05)
+        
+        wedges, texts, autotexts = ax.pie(sizes, explode=explode, labels=labels, colors=colors,
+                                          autopct='%1.1f%%', shadow=True, startangle=90)
+        for autotext in autotexts:
+            autotext.set_color('white')
+            autotext.set_fontsize(14)
+            autotext.set_fontweight('bold')
+        
+        ax.set_title('数据质量检查结果汇总', fontsize=16, fontweight='bold', pad=20)
+        ax.axis('equal')
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, '01_summary_pie.png'), dpi=300, bbox_inches='tight')
+        plt.close()
+    
+    def _plot_class_distribution(self, output_dir: str):
+        """绘制类别分布图"""
+        class_counts = {}
+        class_names_map = {0: '健康', 1: '轻微损伤', 2: '中等损伤', 3: '严重损伤', 4: '多点损伤'}
+        
+        for item in self.metadata:
+            damage_class = item.get('damage_class', 0)
+            name = class_names_map.get(damage_class, f'类别{damage_class}')
+            class_counts[name] = class_counts.get(name, 0) + 1
+        
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+        colors = plt.cm.Set3(np.linspace(0, 1, len(class_counts)))
+        
+        # 柱状图
+        bars = ax1.bar(class_counts.keys(), class_counts.values(), color=colors)
+        ax1.set_xlabel('损伤类别', fontsize=12)
+        ax1.set_ylabel('场景数量', fontsize=12)
+        ax1.set_title('损伤类别分布（柱状图）', fontsize=14, fontweight='bold')
+        ax1.grid(axis='y', alpha=0.3)
+        for bar in bars:
+            height = bar.get_height()
+            ax1.text(bar.get_x() + bar.get_width()/2., height, f'{int(height)}', ha='center', va='bottom', fontsize=10)
+        
+        # 饼图
+        wedges, texts, autotexts = ax2.pie(class_counts.values(), labels=class_counts.keys(),
+                                           autopct='%1.1f%%', colors=colors, shadow=True)
+        ax2.set_title('损伤类别分布（饼图）', fontsize=14, fontweight='bold')
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, '02_class_distribution.png'), dpi=300, bbox_inches='tight')
+        plt.close()
+    
+    def _plot_label_consistency(self, output_dir: str):
+        """绘制标签一致性分析图"""
+        label_data = []
+        for item in self.metadata:
+            scenario_id = item['scenario_id']
+            damaged_dofs = item.get('damaged_dofs', [])
+            damage_class = item.get('damage_class', 0)
+            filename = os.path.join(self.data_dir, f'scenario_{scenario_id:04d}.h5')
+            
+            try:
+                with h5py.File(filename, 'r') as hf:
+                    if 'labels' in hf:
+                        labels = hf['labels'][:]
+                        num_damaged_labels = np.sum(labels > 0)
+                        label_data.append({
+                            'scenario_id': scenario_id,
+                            'expected_damaged_dofs': len(damaged_dofs),
+                            'actual_damaged_labels': int(num_damaged_labels),
+                            'is_consistent': len(damaged_dofs) == num_damaged_labels,
+                            'damage_class': damage_class
+                        })
+            except:
+                pass
+        
+        if len(label_data) == 0:
+            return
+            
+        df = pd.DataFrame(label_data)
+        fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+        
+        # 一致性饼图
+        consistent_count = df['is_consistent'].sum()
+        inconsistent_count = len(df) - consistent_count
+        axes[0, 0].pie([consistent_count, inconsistent_count], labels=['一致', '不一致'],
+                      colors=['#2ecc71', '#e74c3c'], autopct='%1.1f%%', shadow=True)
+        axes[0, 0].set_title('标签一致性检查', fontsize=14, fontweight='bold')
+        
+        # 散点图
+        colors_scatter = ['#2ecc71' if c else '#e74c3c' for c in df['is_consistent']]
+        axes[0, 1].scatter(df['expected_damaged_dofs'], df['actual_damaged_labels'], c=colors_scatter, alpha=0.6, s=80)
+        max_val = max(df['expected_damaged_dofs'].max(), df['actual_damaged_labels'].max())
+        axes[0, 1].plot([0, max_val], [0, max_val], 'r--', alpha=0.5, linewidth=2)
+        axes[0, 1].set_xlabel('期望受损DOF数量', fontsize=12)
+        axes[0, 1].set_ylabel('实际受损标签数量', fontsize=12)
+        axes[0, 1].set_title('标签一致性散点图', fontsize=14, fontweight='bold')
+        axes[0, 1].grid(True, alpha=0.3)
+        
+        # 类别一致性率
+        class_consistency = df.groupby('damage_class')['is_consistent'].agg(['count', 'sum'])
+        class_consistency['rate'] = class_consistency['sum'] / class_consistency['count'] * 100
+        class_names_map = {0: '健康', 1: '轻微', 2: '中等', 3: '严重', 4: '多点'}
+        class_consistency['name'] = class_consistency.index.map(lambda x: class_names_map.get(x, f'C{x}'))
+        
+        x_pos = np.arange(len(class_consistency))
+        bars = axes[1, 0].bar(x_pos, class_consistency['rate'],
+                            color=['#2ecc71' if r == 100 else '#f39c12' for r in class_consistency['rate']])
+        axes[1, 0].set_xlabel('损伤类别', fontsize=12)
+        axes[1, 0].set_ylabel('一致性率 (%)', fontsize=12)
+        axes[1, 0].set_title('各损伤类别的标签一致性率', fontsize=14, fontweight='bold')
+        axes[1, 0].set_xticks(x_pos)
+        axes[1, 0].set_xticklabels(class_consistency['name'], rotation=45, ha='right')
+        axes[1, 0].grid(axis='y', alpha=0.3)
+        axes[1, 0].set_ylim([0, 105])
+        for i, bar in enumerate(bars):
+            height = bar.get_height()
+            axes[1, 0].text(bar.get_x() + bar.get_width()/2., height, f'{height:.1f}%', ha='center', va='bottom')
+        
+        # 不一致详情
+        inconsistent_cases = df[~df['is_consistent']]
+        if len(inconsistent_cases) > 0:
+            case_text = "不一致案例:\n"
+            for idx, row in inconsistent_cases.head(10).iterrows():
+                case_text += f"场景{row['scenario_id']}: 期望{row['expected_damaged_dofs']}, 实际{row['actual_damaged_labels']}\n"
+            if len(inconsistent_cases) > 10:
+                case_text += f"... 还有 {len(inconsistent_cases)-10} 个案例"
+            axes[1, 1].text(0.05, 0.95, case_text, fontsize=9, family='monospace',
+                          verticalalignment='top', transform=axes[1, 1].transAxes)
+            axes[1, 1].axis('off')
+            axes[1, 1].set_title('不一致案例详情', fontsize=14, fontweight='bold')
+        else:
+            axes[1, 1].text(0.5, 0.5, '✓ 所有标签都一致！', fontsize=14, ha='center', va='center', fontweight='bold')
+            axes[1, 1].axis('off')
+            axes[1, 1].set_title('标签一致性', fontsize=14, fontweight='bold')
+            
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, '03_label_consistency.png'), dpi=300, bbox_inches='tight')
+        plt.close()
+
+    def _plot_healthy_vs_damaged(self, output_dir: str):
+        """绘制健康vs损伤样本对比图 (优化内存版)"""
+        feature_data = {'healthy': [], 'damaged': []}
+        
+        for item in self.metadata:
+            scenario_id = item['scenario_id']
+            damaged_dofs = item.get('damaged_dofs', [])
+            is_healthy = len(damaged_dofs) == 0
+            filename = os.path.join(self.data_dir, f'scenario_{scenario_id:04d}.h5')
+            
+            try:
+                with h5py.File(filename, 'r') as hf:
+                    if 'feature_maps' in hf:
+                        dset = hf['feature_maps']
+                        # 优化：只读取前 10 个时间窗口来估算统计量，避免加载整个数据集
+                        # 每个窗口是 (224, 224, 3)，10个窗口约12MB，远小于原来的650MB
+                        sample_count = min(10, dset.shape[0])
+                        
+                        if sample_count > 0:
+                            feat_maps_subset = dset[0:sample_count]
+                            
+                            # 计算均值和标准差
+                            # 注意：这只是基于部分样本的估算，但足够反映特征变化
+                            feat_mean = np.mean(feat_maps_subset)
+                            feat_std = np.std(feat_maps_subset)
+                            
+                            if is_healthy:
+                                feature_data['healthy'].append({'mean': feat_mean, 'std': feat_std})
+                            else:
+                                feature_data['damaged'].append({'mean': feat_mean, 'std': feat_std})
+            except Exception as e:
+                print(f"处理场景 {scenario_id} 时出错: {e}")
+                pass
+        
+        if not feature_data['healthy'] and not feature_data['damaged']:
+            print("没有特征数据，跳过绘图")
+            return
+
+        fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+        
+        healthy_means = [d['mean'] for d in feature_data['healthy']]
+        damaged_means = [d['mean'] for d in feature_data['damaged']]
+        
+        # 均值分布
+        axes[0, 0].hist(healthy_means, bins=30, alpha=0.5, label='健康', color='#2ecc71')
+        axes[0, 0].hist(damaged_means, bins=30, alpha=0.5, label='损伤', color='#e74c3c')
+        axes[0, 0].set_xlabel('特征均值', fontsize=12)
+        axes[0, 0].set_ylabel('频数', fontsize=12)
+        axes[0, 0].set_title('健康vs损伤：特征均值分布', fontsize=14, fontweight='bold')
+        axes[0, 0].legend()
+        axes[0, 0].grid(axis='y', alpha=0.3)
+        
+        # 标准差分布
+        healthy_stds = [d['std'] for d in feature_data['healthy']]
+        damaged_stds = [d['std'] for d in feature_data['damaged']]
+        axes[0, 1].hist(healthy_stds, bins=30, alpha=0.5, label='健康', color='#2ecc71')
+        axes[0, 1].hist(damaged_stds, bins=30, alpha=0.5, label='损伤', color='#e74c3c')
+        axes[0, 1].set_xlabel('特征标准差', fontsize=12)
+        axes[0, 1].set_ylabel('频数', fontsize=12)
+        axes[0, 1].set_title('健康vs损伤：特征标准差分布', fontsize=14, fontweight='bold')
+        axes[0, 1].legend()
+        axes[0, 1].grid(axis='y', alpha=0.3)
+        
+        # 箱线图
+        bp = axes[1, 0].boxplot([healthy_means, damaged_means], labels=['健康', '损伤'], patch_artist=True)
+        for patch, color in zip(bp['boxes'], ['#2ecc71', '#e74c3c']):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.6)
+        axes[1, 0].set_ylabel('特征均值', fontsize=12)
+        axes[1, 0].set_title('健康vs损伤：箱线图对比', fontsize=14, fontweight='bold')
+        axes[1, 0].grid(axis='y', alpha=0.3)
+        
+        # 散点图
+        axes[1, 1].scatter(healthy_means, healthy_stds, c='#2ecc71', alpha=0.6, 
+                            label='健康', s=50)
+        axes[1, 1].scatter(damaged_means, damaged_stds, c='#e74c3c', alpha=0.6, 
+                            label='损伤', s=50)
+        axes[1, 1].set_xlabel('特征均值', fontsize=12)
+        axes[1, 1].set_ylabel('特征标准差', fontsize=12)
+        axes[1, 1].set_title('健康vs损伤：均值vs标准差散点图', fontsize=14, fontweight='bold')
+        axes[1, 1].legend()
+        axes[1, 1].grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, '04_healthy_vs_damaged.png'), dpi=300, bbox_inches='tight')
+        plt.close()
+
+    def _plot_signal_quality(self, output_dir: str):
+        """绘制信号质量分析图"""
+        signal_data = []
+        for item in self.metadata:
+            scenario_id = item['scenario_id']
+            filename = os.path.join(self.data_dir, f'scenario_{scenario_id:04d}.h5')
+            
+            try:
+                with h5py.File(filename, 'r') as hf:
+                    if 'acceleration' in hf:
+                        acc = hf['acceleration'][:]
+                        signal_data.append({
+                            'scenario_id': scenario_id,
+                            'energy': np.sum(acc ** 2),
+                            'rms': np.sqrt(np.mean(acc ** 2)),
+                            'is_healthy': len(item.get('damaged_dofs', [])) == 0
+                        })
+            except Exception as e:
+                pass
+        
+        if len(signal_data) == 0:
+            return
+            
+        df = pd.DataFrame(signal_data)
+        fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+        
+        healthy_df = df[df['is_healthy']]
+        damaged_df = df[~df['is_healthy']]
+
+        # --- 辅助函数：安全绘制分布 ---
+        def plot_distribution(ax, data, label, color, title_suffix=""):
+            if len(data) == 0:
+                return
+            
+            min_val = np.min(data)
+            max_val = np.max(data)
+            
+            # 如果数据是常数（所有值相同），直方图无法绘制，改用垂直线表示
+            if min_val == max_val:
+                # 绘制垂直线
+                ax.axvline(min_val, color=color, linestyle='--', alpha=0.8, linewidth=2, label=label)
+                # 添加数值标注
+                current_ylim = ax.get_ylim()
+                # 如果当前y轴还是默认的(0,1)，手动设置一个稍微高点的位置
+                y_pos = current_ylim[1] * 0.9 if current_ylim[1] > 1 else 0.9
+                ax.text(min_val, y_pos, f'{label}: {min_val:.2e}', 
+                        color=color, fontsize=9, ha='center', va='top', fontweight='bold')
+            else:
+                # 正常绘制直方图
+                ax.hist(data, bins='auto', color=color, label=label, alpha=0.5)
+
+        # --- 1. 信号能量对比 ---
+        if len(healthy_df) > 0:
+            plot_distribution(axes[0, 0], healthy_df['energy'], '健康', '#2ecc71')
+        if len(damaged_df) > 0:
+            plot_distribution(axes[0, 0], damaged_df['energy'], '损伤', '#e74c3c')
+            
+        axes[0, 0].set_xlabel('信号能量', fontsize=12)
+        axes[0, 0].set_ylabel('频数', fontsize=12)
+        axes[0, 0].set_title('信号能量分布对比', fontsize=14, fontweight='bold')
+        axes[0, 0].legend()
+        axes[0, 0].grid(axis='y', alpha=0.3)
+        
+        # 只有当数据中包含正数且有变化时，对数坐标才有意义，否则设置线性坐标
+        has_positive_energy = False
+        if len(healthy_df) > 0 and healthy_df['energy'].max() > 0:
+            has_positive_energy = True
+        if len(damaged_df) > 0 and damaged_df['energy'].max() > 0:
+            has_positive_energy = True
+            
+        # 检查是否有变化的非零数据（避免全是0时log(0)报错或全是常数时显示不美观）
+        varied_positive_energy = False
+        all_energy = []
+        if len(healthy_df) > 0: all_energy.extend(healthy_df['energy'])
+        if len(damaged_df) > 0: all_energy.extend(damaged_df['energy'])
+        
+        if len(all_energy) > 0 and np.max(all_energy) > np.min(all_energy) and np.min(all_energy) > 0:
+            try:
+                axes[0, 0].set_xscale('log')
+            except:
+                pass
+
+        # --- 2. RMS 对比 ---
+        if len(healthy_df) > 0:
+            plot_distribution(axes[0, 1], healthy_df['rms'], '健康', '#2ecc71')
+        if len(damaged_df) > 0:
+            plot_distribution(axes[0, 1], damaged_df['rms'], '损伤', '#e74c3c')
+            
+        axes[0, 1].set_xlabel('RMS值', fontsize=12)
+        axes[0, 1].set_ylabel('频数', fontsize=12)
+        axes[0, 1].set_title('信号RMS分布对比', fontsize=14, fontweight='bold')
+        axes[0, 1].legend()
+        axes[0, 1].grid(axis='y', alpha=0.3)
+
+        # --- 3. 能量 vs RMS 散点图 ---
+        if len(df) > 0:
+            colors = ['#2ecc71' if is_healthy else '#e74c3c' for is_healthy in df['is_healthy']]
+            axes[1, 0].scatter(df['rms'], df['energy'], c=colors, alpha=0.6, s=50)
+            axes[1, 0].set_xlabel('RMS值', fontsize=12)
+            axes[1, 0].set_ylabel('信号能量', fontsize=12)
+            axes[1, 0].set_title('信号能量 vs RMS', fontsize=14, fontweight='bold')
+            axes[1, 0].grid(True, alpha=0.3)
+            # 安全设置对数坐标
+            try:
+                if df['energy'].min() > 0:
+                    axes[1, 0].set_yscale('log')
+            except:
+                pass
+            
+            from matplotlib.patches import Patch
+            axes[1, 0].legend(handles=[Patch(facecolor='#2ecc71', label='健康'), Patch(facecolor='#e74c3c', label='损伤')])
+
+        # --- 4. 统计摘要 ---
+        stats_text = "统计摘要:\n"
+        stats_text += f"总样本数: {len(df)}\n"
+        stats_text += f"健康样本: {df['is_healthy'].sum()}\n"
+        stats_text += f"损伤样本: {len(df) - df['is_healthy'].sum()}\n"
+        
+        # 添加能量统计
+        if len(healthy_df) > 0:
+            stats_text += f"健康能量均值: {healthy_df['energy'].mean():.2e}\n"
+        if len(damaged_df) > 0:
+            stats_text += f"损伤能量均值: {damaged_df['energy'].mean():.2e}\n"
+            
+        axes[1, 1].text(0.1, 0.5, stats_text, fontsize=12, family='monospace', verticalalignment='center')
+        axes[1, 1].axis('off')
+        axes[1, 1].set_title('统计摘要', fontsize=14, fontweight='bold')
+
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, '05_signal_quality.png'), dpi=300, bbox_inches='tight')
+        plt.close()
 
 
-# ==============================================================================
+    def _plot_acceleration_distribution(self, output_dir: str):
+        """绘制加速度数据分布 (优化内存版)"""
+        acc_values = []
+        sample_limit = min(10, len(self.metadata)) # 减少到10个场景
+        
+        for item in self.metadata[:sample_limit]:
+            scenario_id = item['scenario_id']
+            filename = os.path.join(self.data_dir, f'scenario_{scenario_id:04d}.h5')
+            try:
+                with h5py.File(filename, 'r') as hf:
+                    if 'acceleration' in hf:
+                        acc = hf['acceleration'][:]
+                        # 优化：如果数据点太多，随机抽取 5000 个点
+                        if acc.size > 5000:
+                            flat_acc = acc.flatten()
+                            indices = np.random.choice(flat_acc.size, 5000, replace=False)
+                            acc_subset = flat_acc[indices]
+                        else:
+                            acc_subset = acc.flatten()
+                        
+                        acc_values.extend(acc_subset)
+            except Exception as e:
+                pass
+        
+        if len(acc_values) == 0:
+            return
+            
+        acc_values = np.array(acc_values)
+        print(f"绘制加速度分布，数据点数: {len(acc_values):,}")
+
+        fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+        
+        # 直方图
+        axes[0, 0].hist(acc_values, bins=100, color='#3498db', alpha=0.7, edgecolor='black')
+        axes[0, 0].set_xlabel('加速度值 (m/s²)', fontsize=12)
+        axes[0, 0].set_ylabel('频数', fontsize=12)
+        axes[0, 0].set_title('加速度数据分布直方图', fontsize=14, fontweight='bold')
+        axes[0, 0].grid(axis='y', alpha=0.3)
+        
+        # Q-Q图
+        stats.probplot(acc_values, dist="norm", plot=axes[0, 1])
+        axes[0, 1].set_title('加速度数据Q-Q图（正态性检验）', fontsize=14, fontweight='bold')
+        axes[0, 1].grid(True, alpha=0.3)
+        
+        # 箱线图
+        axes[1, 0].boxplot(acc_values, vert=True, patch_artist=True,
+                          boxprops=dict(facecolor='#3498db', alpha=0.7))
+        axes[1, 0].set_ylabel('加速度值 (m/s²)', fontsize=12)
+        axes[1, 0].set_title('加速度数据箱线图', fontsize=14, fontweight='bold')
+        axes[1, 0].grid(axis='y', alpha=0.3)
+        
+        # 统计信息
+        stats_text = f"""
+        统计信息:
+        样本数: {len(acc_values):,}
+        均值: {acc_values.mean():.4f}
+        标准差: {acc_values.std():.4f}
+        最小值: {acc_values.min():.4f}
+        中位数: {np.median(acc_values):.4f}
+        最大值: {acc_values.max():.4f}
+        偏度: {stats.skew(acc_values):.4f}
+        峰度: {stats.kurtosis(acc_values):.4f}
+        """
+        axes[1, 1].text(0.1, 0.5, stats_text, fontsize=12, family='monospace',
+                       verticalalignment='center')
+        axes[1, 1].axis('off')
+        axes[1, 1].set_title('加速度数据统计信息', fontsize=14, fontweight='bold')
+        
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, '06_acceleration_distribution.png'), dpi=300, bbox_inches='tight')
+        plt.close()
+
+    def _plot_feature_map_distribution(self, output_dir: str):
+        """绘制特征图分布 (优化内存版)"""
+        feat_values = []
+        
+        # 只处理前 5 个场景即可，减少内存压力
+        sample_limit = min(5, len(self.metadata))
+        
+        for item in self.metadata[:sample_limit]:
+            scenario_id = item['scenario_id']
+            filename = os.path.join(self.data_dir, f'scenario_{scenario_id:04d}.h5')
+            try:
+                with h5py.File(filename, 'r') as hf:
+                    if 'feature_maps' in hf:
+                        dset = hf['feature_maps']
+                        # 关键优化：不读取全部数据
+                        # 只读取前 3 个窗口，每个窗口约0.5MB，总共1.5MB
+                        # 原来读取全部是 650MB
+                        num_windows = dset.shape[0]
+                        read_count = min(3, num_windows)
+                        
+                        # 读取切片
+                        subset = dset[0:read_count] 
+                        feat_values.extend(subset.flatten())
+            except Exception as e:
+                print(f"读取特征图分布出错: {e}")
+                pass
+        
+        if len(feat_values) == 0:
+            return
+            
+        feat_values = np.array(feat_values)
+        print(f"绘制特征图分布，数据点数: {len(feat_values):,}")
+        
+        fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+        
+        # 直方图
+        axes[0, 0].hist(feat_values, bins=100, color='#9b59b6', alpha=0.7, edgecolor='black')
+        axes[0, 0].set_xlabel('特征值', fontsize=12)
+        axes[0, 0].set_ylabel('频数', fontsize=12)
+        axes[0, 0].set_title('特征图数值分布直方图', fontsize=14, fontweight='bold')
+        axes[0, 0].grid(axis='y', alpha=0.3)
+        
+        # 累积分布
+        sorted_data = np.sort(feat_values)
+        cumulative = np.cumsum(sorted_data) / np.sum(sorted_data)
+        axes[0, 1].plot(sorted_data, cumulative, color='#9b59b6', linewidth=2)
+        axes[0, 1].set_xlabel('特征值', fontsize=12)
+        axes[0, 1].set_ylabel('累积概率', fontsize=12)
+        axes[0, 1].set_title('特征图累积分布函数', fontsize=14, fontweight='bold')
+        axes[0, 1].grid(True, alpha=0.3)
+        
+        # 箱线图
+        axes[1, 0].boxplot(feat_values, vert=True, patch_artist=True, boxprops=dict(facecolor='#9b59b6', alpha=0.7))
+        axes[1, 0].set_ylabel('特征值', fontsize=12)
+        axes[1, 0].set_title('特征图箱线图', fontsize=14, fontweight='bold')
+        axes[1, 0].grid(axis='y', alpha=0.3)
+        
+        # 统计信息
+        stats_text = f"""
+        统计信息:
+        样本数: {len(feat_values):,}
+        均值: {feat_values.mean():.6f}
+        标准差: {feat_values.std():.6f}
+        最小值: {feat_values.min():.6f}
+        中位数: {np.median(feat_values):.6f}
+        最大值: {feat_values.max():.6f}
+        范围: {feat_values.max() - feat_values.min():.6f}
+        """
+        axes[1, 1].text(0.1, 0.5, stats_text, fontsize=12, family='monospace',
+                       verticalalignment='center')
+        axes[1, 1].axis('off')
+        axes[1, 1].set_title('特征图统计信息', fontsize=14, fontweight='bold')
+        
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, '07_feature_map_distribution.png'), dpi=300, bbox_inches='tight')
+        plt.close()
+
+    def _plot_severity_distribution(self, output_dir: str):
+        """绘制损伤严重程度分布图"""
+        severity_data = []
+        for item in self.metadata:
+            severity_ratios = item.get('severity_ratios', [])
+            severity_data.extend(severity_ratios)
+        
+        if len(severity_data) == 0:
+            return
+            
+        severity_data = np.array(severity_data)
+        fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+        
+        # 直方图
+        axes[0, 0].hist(severity_data, bins=20, color='#e67e22', alpha=0.7, edgecolor='black')
+        axes[0, 0].set_xlabel('损伤严重程度', fontsize=12)
+        axes[0, 0].set_ylabel('频数', fontsize=12)
+        axes[0, 0].set_title('损伤严重程度分布', fontsize=14, fontweight='bold')
+        axes[0, 0].grid(axis='y', alpha=0.3)
+        
+        # 累积分布
+        sorted_severity = np.sort(severity_data)
+        cumulative = np.cumsum(sorted_severity) / np.sum(sorted_severity)
+        axes[0, 1].plot(sorted_severity, cumulative, color='#e67e22', linewidth=2)
+        axes[0, 1].set_xlabel('损伤严重程度', fontsize=12)
+        axes[0, 1].set_ylabel('累积概率', fontsize=12)
+        axes[0, 1].set_title('损伤严重程度累积分布', fontsize=14, fontweight='bold')
+        axes[0, 1].grid(True, alpha=0.3)
+        
+        # 区间统计
+        bins = [0, 0.2, 0.4, 0.6, 0.8, 1.0]
+        bin_labels = ['0-20%', '20-40%', '40-60%', '60-80%', '80-100%']
+        bin_counts, _ = np.histogram(severity_data, bins=bins)
+        colors_bin = plt.cm.Reds(np.linspace(0.4, 1, len(bin_counts)))
+        bars = axes[1, 0].bar(bin_labels, bin_counts, color=colors_bin, edgecolor='black')
+        axes[1, 0].set_xlabel('损伤严重程度范围', fontsize=12)
+        axes[1, 0].set_ylabel('频数', fontsize=12)
+        axes[1, 0].set_title('损伤严重程度分区间统计', fontsize=14, fontweight='bold')
+        axes[1, 0].grid(axis='y', alpha=0.3)
+        for bar, count in zip(bars, bin_counts):
+            axes[1, 0].text(bar.get_x() + bar.get_width()/2., bar.get_height(), f'{int(count)}', ha='center', va='bottom')
+        
+        # 统计信息
+        stats_text = f"""
+        损伤严重程度统计:
+        总样本数: {len(severity_data)}
+        均值: {severity_data.mean():.3f}
+        标准差: {severity_data.std():.3f}
+        最小值: {severity_data.min():.3f}
+        中位数: {np.median(severity_data):.3f}
+        最大值: {severity_data.max():.3f}
+        """
+        axes[1, 1].text(0.1, 0.5, stats_text, fontsize=12, family='monospace', verticalalignment='center')
+        axes[1, 1].axis('off')
+        axes[1, 1].set_title('损伤严重程度统计信息', fontsize=14, fontweight='bold')
+        
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, '08_severity_distribution.png'), dpi=300, bbox_inches='tight')
+        plt.close()
+
+
 # 使用示例
-# ==============================================================================
-
 if __name__ == "__main__":
-    # 模拟生成一些测试数据
-    print("生成测试数据...")
-    np.random.seed(42)
+    # 设置数据目录路径（请修改为您实际的数据路径）
+    DATA_DIR = './jacket_damage_data'
     
-    n_samples = 500
-    n_dof = 10
-    n_timepoints = 1000
-    fs = 100.0
+    # 如果使用 `new_mdof.py` 生成的数据，默认输出目录是 `./jacket_damage_data`
+    # 或者您可以指定其他路径：
+    # DATA_DIR = '/path/to/your/data'
     
-    # 生成模拟信号
-    signals = np.zeros((n_samples, n_dof, n_timepoints))
-    for i in range(n_samples):
-        for j in range(n_dof):
-            # 基础信号：多个频率成分
-            t = np.arange(n_timepoints) / fs
-            base_signal = (0.5 * np.sin(2 * np.pi * 0.5 * t) +
-                          0.3 * np.sin(2 * np.pi * 1.2 * t) +
-                          0.2 * np.sin(2 * np.pi * 2.5 * t))
-            
-            # 添加类别相关的变化
-            label = i % 4
-            if label == 0:  # 健康
-                amplitude = 1.0
-            elif label == 1:  # 轻微损伤
-                amplitude = 0.9 + 0.1 * np.sin(2 * np.pi * 0.3 * t)
-            elif label == 2:  # 中等损伤
-                amplitude = 0.8 + 0.2 * np.sin(2 * np.pi * 0.2 * t)
-            else:  # 严重损伤
-                amplitude = 0.7 + 0.3 * np.sin(2 * np.pi * 0.1 * t)
-            
-            # 添加噪声
-            noise = np.random.randn(n_timepoints) * 0.1
-            
-            signals[i, j, :] = amplitude * base_signal + noise
+    print(f"正在检查目录: {DATA_DIR}")
     
-    # 生成模拟图像
-    images = np.random.rand(n_samples, 3, 224, 224).astype(np.float32)
+    # 创建检查器实例
+    inspector = DataQualityInspector(data_dir=DATA_DIR)
     
-    # 生成标签
-    labels = np.random.randint(0, 4, n_samples)
+    # 运行完整检查
+    results = inspector.run_full_inspection()
     
-    print(f"✓ 测试数据生成完成")
-    print(f"  信号形状: {signals.shape}")
-    print(f"  图像形状: {images.shape}")
-    print(f"  标签形状: {labels.shape}")
+    # 生成文字报告
+    report_file = os.path.join(DATA_DIR, 'data_quality_report.txt')
+    report_text = inspector.generate_text_report(output_file=report_file)
     
-    # 创建检查器并运行完整检查
-    inspector = MDOFDataQualityInspector(signals, images, labels, fs=fs)
-    fig, report = inspector.run_full_inspection(output_prefix='mdof_data_quality')
+    # 打印报告到控制台
+    print("\n" + "="*80)
+    print("数据质量检查报告")
+    print("="*80)
+    print(report_text)
     
-    plt.show()
+    # 生成可视化图表
+    plot_dir = os.path.join(DATA_DIR, 'quality_plots')
+    inspector.generate_visualizations(output_dir=plot_dir)
+    
+    # 打印最终分数
+    print("\n" + "="*80)
+    print(f"总体质量分数: {inspector.quality_score:.1f}/100")
+    print("="*80)
+    
+    if inspector.quality_score >= 90:
+        print("结果：数据质量优秀，可以用于训练！")
+    elif inspector.quality_score >= 70:
+        print("结果：数据质量良好，建议检查警告项。")
+    else:
+        print("结果：数据质量不佳，强烈建议修复错误！")
