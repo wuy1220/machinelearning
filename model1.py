@@ -596,7 +596,8 @@ class OffshoreDamageDetectionSystem:
                 _, predicted = torch.max(outputs.data, 1)
                 train_total += labels.size(0)
                 train_correct += (predicted == labels).sum().item()
-            
+                
+                print(f"Processing Batch {batch_idx + 1}/{len(train_loader)} - Loss: {loss.item():.4f}")
             # 验证阶段
             self.model.eval()
             val_loss = 0.0
