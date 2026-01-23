@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from model import OffshoreDamageDetectionSystem
+from model1 import OffshoreDamageDetectionSystem
 from load_h5 import load_h5_dataset
 import matplotlib.pyplot as plt
 import os
