@@ -1,6 +1,7 @@
 import numpy as np
 import torch
-from model1 import OffshoreDamageDetectionSystem
+#from model1 import OffshoreDamageDetectionSystem
+from model1_mn import OffshoreDamageDetectionSystem
 import h5py
 from load_h5 import load_h5_dataset
 import matplotlib.pyplot as plt
@@ -11,57 +12,89 @@ from scipy import stats
 import bisect
 from sklearn.model_selection import train_test_split
 
-
 class H5LazyDataset(Dataset):
     """
-    惰性加载 HDF5 数据集，避免一次性将全部数据读入内存
+    优化版数据集：
+    1. HDF5 按需切片，减少 IO 读取量
+    2. 预计算并缓存统计特征到 RAM，消除重复计算
+    3. 利用 32GB 内存优势
     """
     def __init__(self, data_dir, feature_selection='mean', transform=None):
         self.data_dir = data_dir
         self.feature_selection = feature_selection
         self.transform = transform
         
-        # 1. 扫描目录，构建文件索引映射
+        # 1. 扫描目录
         self.h5_files = sorted(
             [f for f in os.listdir(data_dir) if f.endswith('.h5')],
             key=lambda x: int(x.replace('scenario_', '').replace('.h5', ''))
         )
         
-        # 预计算每个文件的样本数，构建累积索引表 (cumulative_samples)
-        # 例如: [201, 402, 603, ...] 代表第1个文件结束于索引201，第2个于402...
+        # 2. 构建索引和元数据
         self.cumulative_samples = []
-        self.file_metadata = [] # 存储每个文件的 window_length, step_size 等
-        self.acc_cache = []
-
+        self.file_metadata = []
         total_samples = 0
+        
+        # === 新增：预计算特征缓存 ===
+        # 预估内存占用：100场景 * 1160样本 * 16维 * 4字节 ≈ 7.4MB，完全安全
+        print("[Optimization] 正在预计算统计特征到内存 (这需要几分钟，但会极大加速训练)...")
+        self.feature_cache = [] 
+        
         for fname in self.h5_files:
             fpath = os.path.join(data_dir, fname)
             with h5py.File(fpath, 'r') as hf:
                 n_windows = hf['feature_maps'].shape[0]
                 win_len = hf.attrs.get('window_length', 2000)
                 step_size = hf.attrs.get('step_size', 50)
-                acc_data = hf['acceleration'][:].T
-                self.acc_cache.append(acc_data)
-
-            total_samples += n_windows
-            self.cumulative_samples.append(total_samples)
-            self.file_metadata.append({
-                'path': fpath,
-                'window_length': win_len,
-                'step_size': step_size
-            })
-            
+                
+                # --- 关键优化点 A：在这里一次性提取当前文件的所有特征 ---
+                # 读取当前文件的所有加速度数据 (如果内存允许，甚至可以读全文件进一步加速)
+                # 但为了安全，我们遍历窗口切片读取
+                for i in range(n_windows):
+                    start_idx = i * step_size
+                    end_idx = start_idx + win_len
+                    
+                    # === 关键优化点 B：HDF5 按需切片读取 ===
+                    # 不再读取 [:] (全部)，只读取 [start_idx:end_idx]
+                    window_acc = hf['acceleration'][start_idx:end_idx, :].T 
+                    
+                    # 边界处理
+                    if window_acc.shape[1] < win_len:
+                        pad_width = win_len - window_acc.shape[1]
+                        window_acc = np.pad(window_acc, ((0, 0), (0, pad_width)), mode='constant')
+                    
+                    # 特征选择
+                    if self.feature_selection == 'mean':
+                        signal = np.mean(window_acc, axis=0)
+                    else:
+                        signal = window_acc[0, :]
+                    
+                    # 提取特征并存入缓存
+                    feat = self._extract_statistical_features(signal)
+                    self.feature_cache.append(feat)
+                    
+                # 元数据记录
+                total_samples += n_windows
+                self.cumulative_samples.append(total_samples)
+                self.file_metadata.append({
+                    'path': fpath,
+                    'window_length': win_len,
+                    'step_size': step_size
+                })
+        
+        # 将列表转为 numpy 数组，加快索引访问速度
+        self.feature_cache = np.array(self.feature_cache, dtype=np.float32)
         self.total_samples = total_samples
-        print(f"[LazyDataset] 初始化完成，共 {len(self.h5_files)} 个文件，{self.total_samples} 个样本")
+        print(f"[Optimization] 特征缓存完成！")
+        print(f"  - 缓存特征形状: {self.feature_cache.shape}")
+        print(f"  - 预估内存占用: {self.feature_cache.nbytes / 1024 / 1024:.2f} MB")
 
     def __len__(self):
         return self.total_samples
 
     def __getitem__(self, idx):
-        # 1. 定位 idx 对应的文件和局部窗口索引
-        # bisect_right 找到 idx 落在哪个文件的区间内
+        # 1. 定位文件
         file_idx = bisect.bisect_right(self.cumulative_samples, idx)
-        
         if file_idx == 0:
             local_idx = idx
         else:
@@ -69,56 +102,28 @@ class H5LazyDataset(Dataset):
             
         meta = self.file_metadata[file_idx]
         fpath = meta['path']
-        win_len = meta['window_length']
-        step_size = meta['step_size']
         
-        # 2. 从文件中读取所需数据 (核心优化：只读取这一个样本)
+        # 2. 读取图像 (图像还是得从文件读，因为占内存太大)
         with h5py.File(fpath, 'r') as hf:
-            # 读取标签和图像 (图像很小，直接读)
             label = int(hf['damage_class'][0])
-            image = hf['feature_maps'][local_idx] # (H, W, 3) uint8 or float
-            
-            # 读取加速度信号 (这里需要读取全长，然后切片)
-            # 注意：new_mdof_v1.py 保存的 acc 是 (time_steps, n_dof)
-            # load_h5.py 中做了转置 acc.T -> (n_dof, time_steps)
-            acc_full = hf['acceleration'][:] 
-            acc_full = acc_full.T # 转置为 (n_dof, time_steps) 以便切片
-            
-            # 模拟 load_h5.py 的切片逻辑
-            start_idx = local_idx * step_size
-            end_idx = start_idx + win_len
-            
-            if end_idx > acc_full.shape[1]:
-                # 边界处理
-                window_acc = acc_full[:, start_idx:]
-                pad_width = win_len - (end_idx - start_idx)
-                window_acc = np.pad(window_acc, ((0, 0), (0, pad_width)), mode='constant')
-            else:
-                window_acc = acc_full[:, start_idx:end_idx]
+            image = hf['feature_maps'][local_idx] # (H, W, 3)
         
-        # 3. 图像维度处理 (H, W, C) -> (C, H, W) 并转为 float
+        # 3. 图像维度处理
         image = image.transpose(2, 0, 1).astype(np.float32)
         
-        # 4. 特征提取 (复用 model1 中的逻辑)
-        # 避免依赖外部类，这里直接实现简单的特征提取
-        if self.feature_selection == 'mean':
-            window_acc = np.mean(window_acc, axis=0) # 平均所有传感器
-        elif self.feature_selection == 'first_sensor':
-            window_acc = window_acc[0, :]
+        # 4. === 关键优化点 C：直接从 RAM 读取特征，跳过所有计算 ===
+        time_series = self.feature_cache[idx]
         
-        # 提取 16 维统计特征
-        features = self._extract_statistical_features(window_acc)
-        
-        # 5. 转换为 Tensor
-        time_series = torch.FloatTensor(features)
-        image_tensor = torch.FloatTensor(image)
+        # 5. 转为 Tensor
+        time_series_tensor = torch.from_numpy(time_series) # 已是 float32
+        image_tensor = torch.from_numpy(image)
         label_tensor = torch.tensor(label, dtype=torch.long)
         
         # 6. 图像变换
         if self.transform:
             image_tensor = self.transform(image_tensor)
             
-        return time_series, image_tensor, label_tensor
+        return time_series_tensor, image_tensor, label_tensor
 
     def _extract_statistical_features(self, signal_window):
         """提取 16 维统计特征"""
@@ -231,9 +236,9 @@ def main_with_new_simulator():
     print("\n[步骤4] 创建 DataLoader...")
     batch_size = BATCH_SIZE
     
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=8)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
     
     # 注意：如果是惰性加载，num_workers > 0 可能会导致文件读取冲突或预处理负担，
     # 如果内存够用可以设为 2 或 4，否则保持 0 (调试模式)
