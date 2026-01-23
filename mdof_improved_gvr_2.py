@@ -251,7 +251,7 @@ class TimeStackedGVRFeatureExtractor:
     """
     
     def __init__(self, dt, window_length=3000, step_size=50, 
-                 num_stack_windows=224, cutoff_freq=5.0):
+                 num_stack_windows=100, cutoff_freq=5.0):
         """
         Args:
             dt: 采样时间间隔（秒）
