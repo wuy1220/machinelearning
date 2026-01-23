@@ -3,14 +3,12 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import scipy.signal as signal
-from scipy.io import savemat
-import torch
-from torch.utils.data import Dataset, DataLoader
 import h5py
 import os
 from tqdm import tqdm
 from typing import Tuple, List, Dict, Optional
 import json
+
 
 class ImprovedJacketPlatformSimulator:
     """
@@ -170,7 +168,7 @@ class ImprovedJacketPlatformSimulator:
 
     def generate_excitation(self, 
                           excitation_type: str = 'filtered_noise',
-                          amplitude: float = 50000.0,  # 优化幅值
+                          amplitude: float = 50000.0,
                           **kwargs) -> np.ndarray:
         """生成激励力"""
         n = self.num_degrees
@@ -181,8 +179,8 @@ class ImprovedJacketPlatformSimulator:
             
             fs = 1.0 / self.dt
             nyquist = 0.5 * fs
-            low = 0.2 / nyquist
-            high = 3.0 / nyquist  # 专注于低频，避免高频噪声
+            low = 0.15 / nyquist
+            high = 3.5 / nyquist  # 专注于低频，避免高频噪声
             
             if low >= high:
                 low = 0.01
@@ -246,29 +244,31 @@ class ImprovedJacketPlatformSimulator:
         return a
 
 
-class GVRFeatureExtractor:
-    """改进的GVR特征提取器（修复零信号问题）"""
+class TimeStackedGVRFeatureExtractor:
+    """
+    时序堆叠GVR特征提取器
+    生成时序-空间融合的特征图，充分利用CNN的二维卷积能力
+    """
     
-    def __init__(self, dt, window_length=3000, step_size=50, cutoff_freq=5.0, filter_order=4):
+    def __init__(self, dt, window_length=3000, step_size=50, 
+                 num_stack_windows=224, cutoff_freq=5.0):
         """
-        初始化GVR特征提取器
-        
         Args:
             dt: 采样时间间隔（秒）
             window_length: 滑动窗口长度
             step_size: 滑动窗口步长
+            num_stack_windows: 用于堆叠的时间窗口数量（建议224以匹配图像高度）
             cutoff_freq: 低通滤波截止频率
-            filter_order: 滤波器阶数
         """
         self.dt = dt
         self.window_length = window_length
         self.step_size = step_size
+        self.num_stack_windows = num_stack_windows
         self.cutoff_freq = cutoff_freq
-        self.filter_order = filter_order
         
         # 设计Butterworth低通滤波器
         nyquist = 0.5 / self.dt
-        self.b, self.a = signal.butter(filter_order, cutoff_freq / nyquist, btype='low')
+        self.b, self.a = signal.butter(4, cutoff_freq / nyquist, btype='low')
     
     def butterworth_filter(self, data):
         """Butterworth低通滤波器"""
@@ -279,13 +279,6 @@ class GVRFeatureExtractor:
         计算损伤指标DI (Damage Index)
         
         公式：DI_j = √[Σ(xd_ij - xh_ij)²] / √[Σ(xh_ij)² + ε]
-        
-        Args:
-            damaged_signal: 损伤后的信号 (N, C)
-            healthy_signal: 健康信号 (N, C)
-            
-        Returns:
-            DI: 损伤指标 (C,)
         """
         num_channels = damaged_signal.shape[1]
         DI = np.zeros(num_channels)
@@ -325,15 +318,12 @@ class GVRFeatureExtractor:
     
     def extract_gvr_features(self, damaged_signal, healthy_signal):
         """
-        提取GVR特征（修复版）
-        
-        关键修复：对健康样本添加微小噪声
+        提取GVR特征（基础版本，生成DI序列）
         """
         filtered_damaged = self.butterworth_filter(damaged_signal)
         filtered_healthy = self.butterworth_filter(healthy_signal)
         
-        # === 修复1：对健康样本添加微小噪声 ===
-        # 检测是否为健康样本（damaged和healthy信号几乎相同）
+        # 对健康样本添加微小噪声（避免零信号问题）
         if np.allclose(filtered_damaged, filtered_healthy, atol=1e-10):
             noise_level = 1e-6
             signal_std = np.std(filtered_healthy) if np.std(filtered_healthy) > 0 else 1.0
@@ -375,67 +365,150 @@ class GVRFeatureExtractor:
             'GVR_double_prime': DI_double_prime,
         }
     
-    def generate_gvr_feature_map(self, gvr_features, image_size=(224, 224)):
+    def extract_stacked_gvr_features(self, damaged_signal, healthy_signal):
         """
-        生成改进的GVR特征图
+        提取连续时间窗口的GVR特征，形成时序序列
         
-        关键修复：更好的归一化和图像生成
+        Returns:
+            stacked_features: 时序特征列表
+            num_samples: 生成的样本数
         """
-        DI_double_prime = gvr_features['GVR_double_prime'] 
-        num_samples = DI_double_prime.shape[0]
-        num_channels = DI_double_prime.shape[1]
+        # 基础特征提取
+        base_features = self.extract_gvr_features(damaged_signal, healthy_signal)
         
-        feature_maps = np.zeros((num_samples, image_size[0], image_size[1], 3))
+        # 获取所有窗口的DI、DI'、DI''
+        DI_series = base_features['DI']
+        DI_prime_series = base_features['GVR_prime']
+        DI_double_prime_series = base_features['GVR_double_prime']
         
-        for i in range(num_samples):
-            data = DI_double_prime[i]
+        num_windows = DI_series.shape[0]
+        
+        # 窗口不足时进行填充
+        if num_windows < self.num_stack_windows:
+            padding = self.num_stack_windows - num_windows
+            DI_series = np.pad(DI_series, ((0, padding), (0, 0)), mode='edge')
+            DI_prime_series = np.pad(DI_prime_series, ((0, padding), (0, 0)), mode='edge')
+            DI_double_prime_series = np.pad(DI_double_prime_series, ((0, padding), (0, 0)), mode='edge')
+        
+        # 形成时序序列：滑动窗口采样
+        stacked_features = []
+        num_samples = max(1, num_windows - self.num_stack_windows + 1)
+        
+        for start_idx in range(num_samples):
+            end_idx = start_idx + self.num_stack_windows
             
-            data_min = data.min()
-            data_max = data.max()
-            data_range = data_max - data_min
+            DI_seq = DI_series[start_idx:end_idx]
+            DI_prime_seq = DI_prime_series[start_idx:end_idx]
+            DI_double_prime_seq = DI_double_prime_series[start_idx:end_idx]
             
-            # 改进的归一化：处理零信号情况
-            if data_range < 1e-10:
-                if np.any(data != 0):
-                    abs_max = np.abs(data).max()
-                    if abs_max > 0:
-                        normalized = (data + abs_max) / (2 * abs_max)
-                    else:
-                        normalized = np.linspace(0, 1, len(data))
-                else:
-                    normalized = np.linspace(0, 1, len(data))
-            else:
-                normalized = (data - data_min) / data_range
+            stacked_features.append({
+                'DI_seq': DI_seq,
+                'DI_prime_seq': DI_prime_seq,
+                'DI_double_prime_seq': DI_double_prime_seq
+            })
+        
+        return stacked_features, num_samples
+    
+    def generate_time_space_feature_map(self, stacked_features, image_size=(224, 224)):
+        """
+        生成时序-空间融合的特征图
+        
+        图像结构：
+        - X轴（224）：传感器空间位置（插值后）
+        - Y轴（224）：时间演进（连续的224个时间窗口）
+        - R通道：DI'(变化趋势)的时序演化
+        - G通道：DI''(突变特征)的时序演化
+        - B通道：DI(损伤强度)的时序演化
+        """
+        feature_maps = []
+        
+        for features in stacked_features:
+            DI_seq = features['DI_seq']  # (num_stack_windows, num_channels)
+            DI_prime_seq = features['DI_prime_seq']
+            DI_double_prime_seq = features['DI_double_prime_seq']
             
-            # 插值到图像宽度
+            num_windows, num_channels = DI_seq.shape
+            
+            # 每个通道独立归一化（归一化整个时序）
+            def normalize_sequence(seq):
+                seq_min = seq.min()
+                seq_max = seq.max()
+                seq_range = seq_max - seq_min
+                if seq_range < 1e-10:
+                    return np.zeros_like(seq)
+                return (seq - seq_min) / seq_range
+            
+            DI_seq_norm = normalize_sequence(DI_seq)
+            DI_prime_seq_norm = normalize_sequence(DI_prime_seq)
+            DI_double_prime_seq_norm = normalize_sequence(DI_double_prime_seq)
+            
+            # 插值到图像宽度（X轴）
             x_original = np.arange(num_channels)
             x_new = np.linspace(0, num_channels - 1, image_size[1])
             
-            try:
-                z_row = np.interp(x_new, x_original, normalized, 
-                                 left=normalized[0], right=normalized[-1])
-            except:
-                z_row = normalized
+            # 对每个时间窗口进行插值
+            DI_interp = np.zeros((num_windows, image_size[1]))
+            DI_prime_interp = np.zeros((num_windows, image_size[1]))
+            DI_double_prime_interp = np.zeros((num_windows, image_size[1]))
             
-            # 改进的2D图像生成
-            y_gradient = np.linspace(0, 1, image_size[0]).reshape(-1, 1)
+            for t in range(num_windows):
+                DI_interp[t] = np.interp(x_new, x_original, DI_seq_norm[t])
+                DI_prime_interp[t] = np.interp(x_new, x_original, DI_prime_seq_norm[t])
+                DI_double_prime_interp[t] = np.interp(x_new, x_original, DI_double_prime_seq_norm[t])
             
-            img_r = np.tile(z_row, (image_size[0], 1))
-            img_g = img_r * y_gradient
-            img_b = np.tile(z_row.reshape(1, -1), (image_size[0], 1))
+            # 处理Y轴尺寸匹配
+            if num_windows < image_size[0]:
+                # 在Y轴插值
+                y_original = np.arange(num_windows)
+                y_new = np.linspace(0, num_windows - 1, image_size[0])
+                
+                img_r = np.zeros((image_size[0], image_size[1]))
+                img_g = np.zeros((image_size[0], image_size[1]))
+                img_b = np.zeros((image_size[0], image_size[1]))
+                
+                for x in range(image_size[1]):
+                    img_r[:, x] = np.interp(y_new, y_original, DI_prime_interp[:, x])
+                    img_g[:, x] = np.interp(y_new, y_original, DI_double_prime_interp[:, x])
+                    img_b[:, x] = np.interp(y_new, y_original, DI_interp[:, x])
+            elif num_windows > image_size[0]:
+                # 下采样
+                indices = np.linspace(0, num_windows - 1, image_size[0], dtype=int)
+                img_r = DI_prime_interp[indices]
+                img_g = DI_double_prime_interp[indices]
+                img_b = DI_interp[indices]
+            else:
+                img_r = DI_prime_interp
+                img_g = DI_double_prime_interp
+                img_b = DI_interp
+            
+            # 添加传感器位置标记（竖线）
+            sensor_spacing = image_size[1] // num_channels if num_channels > 0 else 1
+            for x in range(0, image_size[1], sensor_spacing):
+                img_r[:, x] = np.minimum(img_r[:, x] * 0.9, 1.0)
+            
+            # 添加时间维度标记（底部更亮）
+            time_gradient = np.linspace(0, 1, image_size[0]).reshape(-1, 1)
+            img_b = img_b * (0.8 + 0.2 * time_gradient)
             
             img_rgb = np.stack([img_r, img_g, img_b], axis=2)
-            feature_maps[i] = img_rgb
+            feature_maps.append(img_rgb)
         
-        return feature_maps
+        return np.array(feature_maps, dtype=np.float32)
 
 
 class ImprovedDamageDataGenerator:
     """
     改进的损伤数据生成器
+    集成时序堆叠GVR特征提取器
     """
     
     def __init__(self, simulator, gvr_extractor, output_dir='./jacket_damage_data_improved'):
+        """
+        Args:
+            simulator: 仿真器实例
+            gvr_extractor: 必须是TimeStackedGVRFeatureExtractor实例
+            output_dir: 输出目录
+        """
         self.simulator = simulator
         self.gvr_extractor = gvr_extractor
         self.output_dir = output_dir
@@ -443,47 +516,61 @@ class ImprovedDamageDataGenerator:
         self.metadata = []
     
     def generate_single_damage_scenario(self,
-                                       damaged_dofs,
-                                       severity_ratios,
-                                       scenario_id,
-                                       save_data=True):
-        """生成单个场景"""
-        # 1. 生成激励
+                                        damaged_dofs,
+                                        severity_ratios,
+                                        scenario_id,
+                                        save_data=True):
+        """
+        生成单个损伤场景
+        
+        Args:
+            damaged_dofs: 损伤自由度列表
+            severity_ratios: 损伤严重程度列表
+            scenario_id: 场景ID
+            save_data: 是否保存数据
+        """
+        # 1. 生成激励和响应
         F = self.simulator.generate_excitation(excitation_type='filtered_noise')
-        
-        # 2. 计算健康响应
         healthy_response = self.simulator.simulate_response(self.simulator.K0, F)
-        
-        # 3. 施加损伤并计算损伤响应
         K_damaged = self.simulator.apply_damage(damaged_dofs, severity_ratios)
         damaged_response = self.simulator.simulate_response(K_damaged, F)
         
-        # 4. 提取特征
-        gvr_features = self.gvr_extractor.extract_gvr_features(damaged_response, healthy_response)
-        feature_maps = self.gvr_extractor.generate_gvr_feature_map(gvr_features)
+        # 2. 使用时序堆叠提取特征
+        stacked_features, num_samples = self.gvr_extractor.extract_stacked_gvr_features(
+            damaged_response, healthy_response
+        )
         
-        # 5. 生成标签
+        # 3. 生成时序-空间特征图
+        feature_maps = self.gvr_extractor.generate_time_space_feature_map(stacked_features)
+        
+        # 4. 生成标签
         labels = np.zeros(self.simulator.num_degrees, dtype=int)
         if damaged_dofs:
             labels[np.array(damaged_dofs)] = 1
-            
-        # 6. 确定类别
-        damage_class = 0
-        if len(damaged_dofs) == 0:
-            damage_class = 0
-        elif len(damaged_dofs) == 1:
-            s = severity_ratios[0]
-            if s < 0.3: damage_class = 1
-            elif s < 0.6: damage_class = 2
-            else: damage_class = 3
-        else:
-            damage_class = 4
-            
-        # 7. 保存
+        
+        # 扩展标签以匹配样本数
+        labels_array = np.tile(labels, (num_samples, 1))
+        
+        # 5. 确定损伤类别
+        damage_class = self._determine_damage_class(damaged_dofs, severity_ratios)
+
+        # 6. 保存数据
         if save_data:
-            self._save_scenario_data(damaged_response, feature_maps, labels, damage_class, 
-                                     damaged_dofs, severity_ratios, scenario_id)
+            # 计算需要保存的加速度数据长度
+            total_steps_needed = (num_samples - 1) * self.gvr_extractor.step_size + \
+                               self.gvr_extractor.num_stack_windows * self.gvr_extractor.window_length
+            acc_to_save = damaged_response[:total_steps_needed]
             
+            self._save_scenario_data(
+                acc_to_save,
+                feature_maps,
+                labels_array[0],
+                damage_class,
+                damaged_dofs,
+                severity_ratios,
+                scenario_id
+            )
+        
         self.metadata.append({
             'scenario_id': scenario_id,
             'damaged_dofs': damaged_dofs,
@@ -495,30 +582,40 @@ class ImprovedDamageDataGenerator:
         return {
             'acceleration': damaged_response,
             'healthy': healthy_response,
-            'feature_maps': feature_maps
+            'feature_maps': feature_maps,
+            'labels': labels_array
         }
     
+    def _determine_damage_class(self, damaged_dofs, severity_ratios):
+        """确定损伤类别"""
+        if len(damaged_dofs) == 0:
+            return 0  # 健康
+        elif len(damaged_dofs) == 1:
+            s = severity_ratios[0]
+            if s < 0.3:
+                return 1  # 轻度损伤
+            elif s < 0.6:
+                return 2  # 中度损伤
+            else:
+                return 3  # 重度损伤
+        else:
+            return 4  # 多处损伤
+
     def _save_scenario_data(self, acc, feat_maps, labels, damage_class, dofs, sevs, sid):
+        """保存场景数据到HDF5文件"""
         filename = os.path.join(self.output_dir, f'scenario_{sid:04d}.h5')
         
-        # === 核心优化 1: 数据类型转换 (float64 -> float32) ===
-        # 特征图和加速度信号转换为 float32，体积减半且不影响深度学习精度
+        # 数据类型转换（节省空间）
         acc = acc.astype(np.float32)
         feat_maps = feat_maps.astype(np.float32)
-        
-        # 将 labels 转为最小的整型以节省空间
         labels = labels.astype(np.uint8)
         
         with h5py.File(filename, 'w') as hf:
-            # === 核心优化 2: 启用 Gzip 压缩 ===
-            # compression='gzip', compression_opts=4 提供了压缩率和速度的平衡
-            # chunks=True 让 HDF5 自动选择分块，配合压缩效果最好
-            
-            # 保存加速度数据
+            # 保存加速度数据（带压缩）
             hf.create_dataset('acceleration', data=acc, 
                              compression='gzip', compression_opts=4)
             
-            # 保存特征图 (这是最大的数据源，压缩效果最明显)
+            # 保存特征图（带压缩）
             hf.create_dataset('feature_maps', data=feat_maps, 
                              compression='gzip', compression_opts=4)
             
@@ -528,14 +625,13 @@ class ImprovedDamageDataGenerator:
             # 保存损伤类别
             hf.create_dataset('damage_class', data=np.array([damage_class], dtype=np.uint8))
             
+            # 保存属性
             hf.attrs['damaged_dofs'] = np.array(dofs)
             hf.attrs['severity_ratios'] = np.array(sevs)
-            
-            # === 新增：保存滑动窗口参数，供加载数据时使用 ===
             hf.attrs['window_length'] = self.gvr_extractor.window_length
             hf.attrs['step_size'] = self.gvr_extractor.step_size
+            hf.attrs['num_stack_windows'] = self.gvr_extractor.num_stack_windows
 
-    
     def generate_comprehensive_dataset(self,
                                       num_scenarios=100,
                                       min_damage_dofs=1,
@@ -543,62 +639,111 @@ class ImprovedDamageDataGenerator:
                                       min_severity=0.15,
                                       max_severity=0.8,
                                       healthy_ratio=0.3):
-        print(f"开始生成改进版数据集，总场景数: {num_scenarios}...")
+        """
+        生成综合数据集
+        
+        Args:
+            num_scenarios: 总场景数
+            min_damage_dofs: 最小损伤位置数
+            max_damage_dofs: 最大损伤位置数
+            min_severity: 最小损伤严重程度
+            max_severity: 最大损伤严重程度
+            healthy_ratio: 健康样本比例
+        """
+        print(f"开始生成改进版数据集（时序-空间融合），总场景数: {num_scenarios}...")
+        print(f"堆叠窗口数: {self.gvr_extractor.num_stack_windows}")
+        print(f"特征图尺寸: (224, 224, 3) - X轴=空间，Y轴=时序")
         
         num_healthy = int(num_scenarios * healthy_ratio)
         num_damaged = num_scenarios - num_healthy
         
-        print(f"生成健康样本: {num_healthy} ...")
-        for i in range(num_healthy):
+        # 生成健康样本
+        print(f"\n生成健康样本: {num_healthy} ...")
+        for i in tqdm(range(num_healthy), desc="健康样本"):
             self.generate_single_damage_scenario([], [], i, save_data=True)
-            
-        print(f"生成损伤样本: {num_damaged} ...")
-        for i in range(num_damaged):
+        
+        # 生成损伤样本
+        print(f"\n生成损伤样本: {num_damaged} ...")
+        for i in tqdm(range(num_damaged), desc="损伤样本"):
             sid = num_healthy + i
             num_damage = np.random.randint(min_damage_dofs, max_damage_dofs + 1)
-            dofs = np.random.choice(range(self.simulator.num_degrees), num_damage, replace=False).tolist()
+            dofs = np.random.choice(range(self.simulator.num_degrees), 
+                                   num_damage, replace=False).tolist()
             sevs = np.random.uniform(min_severity, max_severity, num_damage).tolist()
             
             self.generate_single_damage_scenario(dofs, sevs, sid, save_data=True)
-            
+        
         self._save_metadata()
-        print("数据集生成完成。")
+        print("\n数据集生成完成！")
+        print(f"输出目录: {self.output_dir}")
+        print(f"总场景数: {num_scenarios}")
         
     def _save_metadata(self):
+        """保存元数据到JSON文件"""
         with open(os.path.join(self.output_dir, 'metadata.json'), 'w') as f:
             json.dump(self.metadata, f, indent=2)
 
 
 if __name__ == "__main__":
+    # ===== 参数配置 =====
     dt = 0.005
     duration = 60.0
+    num_degrees = 30
     
+    # 初始化仿真器
+    print("=" * 60)
+    print("初始化导管架平台仿真系统")
+    print("=" * 60)
     simulator = ImprovedJacketPlatformSimulator(
-        num_degrees=30,
+        num_degrees=num_degrees,
         dt=dt,
         duration=duration,
         damping_ratio=0.05,
         seed=42
     )
     
-    gvr_extractor = GVRFeatureExtractor(
+    # 初始化时序堆叠GVR特征提取器
+    print("\n初始化时序堆叠GVR特征提取器")
+    print("=" * 60)
+    gvr_extractor = TimeStackedGVRFeatureExtractor(
         dt=dt,
-        window_length=2000,
-        step_size=50,
+        window_length=2000,          # 单窗口长度
+        step_size=50,                # 滑动步长
+        num_stack_windows=100,       # 堆叠窗口数（=图像高度）
         cutoff_freq=2.0
     )
     
+    print(f"配置参数:")
+    print(f"  - 单窗口长度: {gvr_extractor.window_length} 点")
+    print(f"  - 滑动步长: {gvr_extractor.step_size} 点")
+    print(f"  - 堆叠窗口数: {gvr_extractor.num_stack_windows} (图像高度)")
+    print(f"  - 滤波截止频率: {gvr_extractor.cutoff_freq} Hz")
+    
+    # 初始化数据生成器
+    print("\n初始化数据生成器")
+    print("=" * 60)
     generator = ImprovedDamageDataGenerator(
         simulator=simulator,
         gvr_extractor=gvr_extractor,
-        output_dir='./jacket_damage_data'
+        output_dir='./jacket_damage_data_timespace'
     )
     
+    # 生成数据集
+    print("\n开始生成数据集")
+    print("=" * 60)
     generator.generate_comprehensive_dataset(
-        num_scenarios=100,
+        num_scenarios=10,
         healthy_ratio=0.3,
         min_severity=0.2,
         max_severity=0.8
     )
     
-    print("数据生成完毕，请运行 check_data.py 验证质量。")
+    print("\n" + "=" * 60)
+    print("数据生成完毕！")
+    print("=" * 60)
+    print("\n特征图说明:")
+    print("  - X轴 (224px): 传感器空间位置 (1-30)")
+    print("  - Y轴 (224px): 时间演进 (连续224个时间窗口)")
+    print("  - R通道: DI' (变化趋势) 的时序演化")
+    print("  - G通道: DI'' (突变特征) 的时序演化")
+    print("  - B通道: DI (损伤强度) 的时序演化")
