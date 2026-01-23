@@ -672,6 +672,117 @@ class DataQualityInspector:
             for cls, count in sorted(class_dist.items()):
                 name = class_names.get(cls, f'类别{cls}')
                 report_lines.append(f"  {name}: {count} 个场景 ({count/total_scenarios*100:.1f}%)")
+            
+            # === 图表统计信息 ===
+            report_lines.append("\n" + "-" * 80)
+            report_lines.append("图表统计信息")
+            report_lines.append("-" * 80)
+            
+            # 1. 标签一致性统计
+            label_stats = self._collect_label_consistency_stats()
+            if label_stats:
+                report_lines.append("\n[标签一致性分析]")
+                report_lines.append(f"  总检查数: {label_stats['total']}")
+                report_lines.append(f"  一致数: {label_stats['consistent_count']} ({label_stats['consistency_rate']:.1f}%)")
+                report_lines.append(f"  不一致数: {label_stats['inconsistent_count']} ({100-label_stats['consistency_rate']:.1f}%)")
+                
+                report_lines.append("\n  各类别一致性率:")
+                for class_id, data in sorted(label_stats['class_consistency'].items()):
+                    name = data['name']
+                    count = int(data['count'])
+                    rate = data['rate']
+                    report_lines.append(f"    {name}: {rate:.1f}% ({count}/{count})")
+                
+                if label_stats['inconsistent_cases']:
+                    report_lines.append("\n  不一致案例 (最多显示10个):")
+                    for case in label_stats['inconsistent_cases']:
+                        report_lines.append(f"    场景{case['scenario_id']}: 期望{case['expected_damaged_dofs']}, 实际{case['actual_damaged_labels']}")
+            
+            # 2. 健康vs损伤对比统计
+            hvdd_stats = self._collect_healthy_vs_damaged_stats()
+            if hvdd_stats:
+                report_lines.append("\n[健康 vs 损伤对比]")
+                if 'healthy' in hvdd_stats:
+                    h = hvdd_stats['healthy']
+                    report_lines.append(f"  健康样本 ({h['count']} 个):")
+                    report_lines.append(f"    特征均值: {h['mean_mean']:.6f} ± {h['std_mean']:.6f}")
+                    report_lines.append(f"    特征标准差: {h['mean_std']:.6f} ± {h['std_std']:.6f}")
+                    report_lines.append(f"    均值范围: [{h['mean_range'][0]:.6f}, {h['mean_range'][1]:.6f}]")
+                
+                if 'damaged' in hvdd_stats:
+                    d = hvdd_stats['damaged']
+                    report_lines.append(f"  损伤样本 ({d['count']} 个):")
+                    report_lines.append(f"    特征均值: {d['mean_mean']:.6f} ± {d['std_mean']:.6f}")
+                    report_lines.append(f"    特征标准差: {d['mean_std']:.6f} ± {d['std_std']:.6f}")
+                    report_lines.append(f"    均值范围: [{d['mean_range'][0]:.6f}, {d['mean_range'][1]:.6f}]")
+                
+                if 'cohens_d' in hvdd_stats:
+                    d_value = hvdd_stats['cohens_d']
+                    if d_value > 0.8:
+                        sep_level = "优秀"
+                    elif d_value > 0.5:
+                        sep_level = "中等"
+                    elif d_value > 0.2:
+                        sep_level = "较低"
+                    else:
+                        sep_level = "极低"
+                    report_lines.append(f"  Cohen's d 分离度: {d_value:.3f} ({sep_level})")
+            
+            # 3. 信号质量统计
+            signal_stats = self._collect_signal_quality_stats()
+            if signal_stats:
+                report_lines.append("\n[信号质量分析]")
+                if 'healthy' in signal_stats:
+                    h = signal_stats['healthy']
+                    report_lines.append(f"  健康样本 ({h['count']} 个):")
+                    report_lines.append(f"    信号能量: 均值={h['energy']['mean']:.2e}, 标准差={h['energy']['std']:.2e}, 范围=[{h['energy']['min']:.2e}, {h['energy']['max']:.2e}]")
+                    report_lines.append(f"    RMS值: 均值={h['rms']['mean']:.4f}, 标准差={h['rms']['std']:.4f}, 范围=[{h['rms']['min']:.4f}, {h['rms']['max']:.4f}]")
+                
+                if 'damaged' in signal_stats:
+                    d = signal_stats['damaged']
+                    report_lines.append(f"  损伤样本 ({d['count']} 个):")
+                    report_lines.append(f"    信号能量: 均值={d['energy']['mean']:.2e}, 标准差={d['energy']['std']:.2e}, 范围=[{d['energy']['min']:.2e}, {d['energy']['max']:.2e}]")
+                    report_lines.append(f"    RMS值: 均值={d['rms']['mean']:.4f}, 标准差={d['rms']['std']:.4f}, 范围=[{d['rms']['min']:.4f}, {d['rms']['max']:.4f}]")
+            
+            # 4. 加速度分布统计
+            acc_stats = self._collect_acceleration_stats()
+            if acc_stats:
+                report_lines.append("\n[加速度数据分布]")
+                report_lines.append(f"  采样点数: {acc_stats['sample_count']:,}")
+                report_lines.append(f"  均值: {acc_stats['mean']:.4f} m/s²")
+                report_lines.append(f"  标准差: {acc_stats['std']:.4f} m/s²")
+                report_lines.append(f"  最小值: {acc_stats['min']:.4f} m/s²")
+                report_lines.append(f"  中位数: {acc_stats['median']:.4f} m/s²")
+                report_lines.append(f"  最大值: {acc_stats['max']:.4f} m/s²")
+                report_lines.append(f"  偏度: {acc_stats['skewness']:.4f}")
+                report_lines.append(f"  峰度: {acc_stats['kurtosis']:.4f}")
+            
+            # 5. 特征图分布统计
+            feat_stats = self._collect_feature_map_stats()
+            if feat_stats:
+                report_lines.append("\n[特征图数值分布]")
+                report_lines.append(f"  采样点数: {feat_stats['sample_count']:,}")
+                report_lines.append(f"  均值: {feat_stats['mean']:.6f}")
+                report_lines.append(f"  标准差: {feat_stats['std']:.6f}")
+                report_lines.append(f"  最小值: {feat_stats['min']:.6f}")
+                report_lines.append(f"  中位数: {feat_stats['median']:.6f}")
+                report_lines.append(f"  最大值: {feat_stats['max']:.6f}")
+                report_lines.append(f"  数值范围: {feat_stats['range']:.6f}")
+            
+            # 6. 损伤严重程度统计
+            severity_stats = self._collect_severity_stats()
+            if severity_stats:
+                report_lines.append("\n[损伤严重程度分布]")
+                report_lines.append(f"  总损伤点数: {severity_stats['total_samples']}")
+                report_lines.append(f"  均值: {severity_stats['mean']:.3f}")
+                report_lines.append(f"  标准差: {severity_stats['std']:.3f}")
+                report_lines.append(f"  最小值: {severity_stats['min']:.3f}")
+                report_lines.append(f"  中位数: {severity_stats['median']:.3f}")
+                report_lines.append(f"  最大值: {severity_stats['max']:.3f}")
+                report_lines.append(f"  分区间统计:")
+                for label, count in sorted(severity_stats['bin_distribution'].items()):
+                    percentage = count / severity_stats['total_samples'] * 100
+                    report_lines.append(f"    {label}: {count} 个 ({percentage:.1f}%)")
         
         # 结论和建议
         report_lines.append("\n" + "-" * 80)
@@ -704,7 +815,297 @@ class DataQualityInspector:
                 print(f"保存文字报告失败: {e}")
         
         return report_text
+
+
+    def _collect_label_consistency_stats(self) -> Dict:
+        """收集标签一致性统计信息"""
+        label_data = []
+        for item in self.metadata:
+            scenario_id = item['scenario_id']
+            damaged_dofs = item.get('damaged_dofs', [])
+            damage_class = item.get('damage_class', 0)
+            filename = os.path.join(self.data_dir, f'scenario_{scenario_id:04d}.h5')
+            
+            try:
+                with h5py.File(filename, 'r') as hf:
+                    if 'labels' in hf:
+                        labels = hf['labels'][:]
+                        num_damaged_labels = np.sum(labels > 0)
+                        label_data.append({
+                            'scenario_id': scenario_id,
+                            'expected_damaged_dofs': len(damaged_dofs),
+                            'actual_damaged_labels': int(num_damaged_labels),
+                            'is_consistent': len(damaged_dofs) == num_damaged_labels,
+                            'damage_class': damage_class
+                        })
+            except:
+                pass
+        
+        if len(label_data) == 0:
+            return None
+        
+        df = pd.DataFrame(label_data)
+        consistent_count = df['is_consistent'].sum()
+        inconsistent_count = len(df) - consistent_count
+        
+        # 类别一致性统计
+        class_consistency = df.groupby('damage_class')['is_consistent'].agg(['count', 'sum'])
+        class_consistency['rate'] = class_consistency['sum'] / class_consistency['count'] * 100
+        class_names_map = {0: '健康', 1: '轻微', 2: '中等', 3: '严重', 4: '多点'}
+        class_consistency['name'] = class_consistency.index.map(lambda x: class_names_map.get(x, f'C{x}'))
+        
+        # 不一致案例
+        inconsistent_cases = df[~df['is_consistent']].to_dict('records')
+        
+        return {
+            'total': len(df),
+            'consistent_count': consistent_count,
+            'inconsistent_count': inconsistent_count,
+            'consistency_rate': consistent_count / len(df) * 100,
+            'class_consistency': class_consistency.to_dict('index'),
+            'inconsistent_cases': inconsistent_cases[:10]  # 最多显示10个
+        }
     
+    def _collect_healthy_vs_damaged_stats(self) -> Dict:
+        """收集健康vs损伤对比统计信息"""
+        healthy_means = []
+        healthy_stds = []
+        damaged_means = []
+        damaged_stds = []
+        
+        sample_limit = min(10, len(self.metadata))
+        
+        for item in self.metadata[:sample_limit]:
+            scenario_id = item['scenario_id']
+            damaged_dofs = item.get('damaged_dofs', [])
+            is_healthy = len(damaged_dofs) == 0
+            filename = os.path.join(self.data_dir, f'scenario_{scenario_id:04d}.h5')
+            
+            try:
+                with h5py.File(filename, 'r') as hf:
+                    if 'feature_maps' in hf:
+                        dset = hf['feature_maps']
+                        sample_count = min(10, dset.shape[0])
+                        
+                        if sample_count > 0:
+                            feat_maps_subset = dset[0:sample_count]
+                            feat_mean = float(np.mean(feat_maps_subset))
+                            feat_std = float(np.std(feat_maps_subset))
+                            
+                            if is_healthy:
+                                healthy_means.append(feat_mean)
+                                healthy_stds.append(feat_std)
+                            else:
+                                damaged_means.append(feat_mean)
+                                damaged_stds.append(feat_std)
+            except:
+                pass
+        
+        if not healthy_means and not damaged_means:
+            return None
+        
+        stats = {}
+        if healthy_means:
+            stats['healthy'] = {
+                'count': len(healthy_means),
+                'mean_mean': np.mean(healthy_means),
+                'std_mean': np.std(healthy_means),
+                'mean_std': np.mean(healthy_stds),
+                'std_std': np.std(healthy_stds),
+                'mean_range': (np.min(healthy_means), np.max(healthy_means))
+            }
+        if damaged_means:
+            stats['damaged'] = {
+                'count': len(damaged_means),
+                'mean_mean': np.mean(damaged_means),
+                'std_mean': np.std(damaged_means),
+                'mean_std': np.mean(damaged_stds),
+                'std_std': np.std(damaged_stds),
+                'mean_range': (np.min(damaged_means), np.max(damaged_means))
+            }
+        
+        # 计算Cohen's d
+        if len(healthy_means) > 1 and len(damaged_means) > 1:
+            mean_diff = np.mean(damaged_means) - np.mean(healthy_means)
+            std_healthy_means = np.std(healthy_means, ddof=1)
+            std_damaged_means = np.std(damaged_means, ddof=1)
+            pooled_std = np.sqrt((std_healthy_means**2 + std_damaged_means**2) / 2)
+            if pooled_std > 0:
+                stats['cohens_d'] = abs(mean_diff) / pooled_std
+            else:
+                stats['cohens_d'] = 0.0
+        
+        return stats
+    
+    def _collect_signal_quality_stats(self) -> Dict:
+        """收集信号质量统计信息"""
+        healthy_energies = []
+        damaged_energies = []
+        healthy_rms = []
+        damaged_rms = []
+        
+        for item in self.metadata:
+            scenario_id = item['scenario_id']
+            filename = os.path.join(self.data_dir, f'scenario_{scenario_id:04d}.h5')
+            
+            try:
+                with h5py.File(filename, 'r') as hf:
+                    if 'acceleration' in hf:
+                        acc = hf['acceleration'][:]
+                        energy = np.sum(acc ** 2)
+                        rms = np.sqrt(np.mean(acc ** 2))
+                        is_healthy = len(item.get('damaged_dofs', [])) == 0
+                        
+                        if is_healthy:
+                            healthy_energies.append(energy)
+                            healthy_rms.append(rms)
+                        else:
+                            damaged_energies.append(energy)
+                            damaged_rms.append(rms)
+            except:
+                pass
+        
+        stats = {}
+        if healthy_energies:
+            stats['healthy'] = {
+                'count': len(healthy_energies),
+                'energy': {
+                    'mean': np.mean(healthy_energies),
+                    'std': np.std(healthy_energies),
+                    'min': np.min(healthy_energies),
+                    'max': np.max(healthy_energies),
+                    'median': np.median(healthy_energies)
+                },
+                'rms': {
+                    'mean': np.mean(healthy_rms),
+                    'std': np.std(healthy_rms),
+                    'min': np.min(healthy_rms),
+                    'max': np.max(healthy_rms),
+                    'median': np.median(healthy_rms)
+                }
+            }
+        if damaged_energies:
+            stats['damaged'] = {
+                'count': len(damaged_energies),
+                'energy': {
+                    'mean': np.mean(damaged_energies),
+                    'std': np.std(damaged_energies),
+                    'min': np.min(damaged_energies),
+                    'max': np.max(damaged_energies),
+                    'median': np.median(damaged_energies)
+                },
+                'rms': {
+                    'mean': np.mean(damaged_rms),
+                    'std': np.std(damaged_rms),
+                    'min': np.min(damaged_rms),
+                    'max': np.max(damaged_rms),
+                    'median': np.median(damaged_rms)
+                }
+            }
+        
+        return stats if stats else None
+    
+    def _collect_acceleration_stats(self) -> Dict:
+        """收集加速度数据统计信息"""
+        acc_values = []
+        sample_limit = min(10, len(self.metadata))
+        
+        for item in self.metadata[:sample_limit]:
+            scenario_id = item['scenario_id']
+            filename = os.path.join(self.data_dir, f'scenario_{scenario_id:04d}.h5')
+            try:
+                with h5py.File(filename, 'r') as hf:
+                    if 'acceleration' in hf:
+                        acc = hf['acceleration'][:]
+                        if acc.size > 5000:
+                            flat_acc = acc.flatten()
+                            indices = np.random.choice(flat_acc.size, 5000, replace=False)
+                            acc_subset = flat_acc[indices]
+                        else:
+                            acc_subset = acc.flatten()
+                        acc_values.extend(acc_subset)
+            except:
+                pass
+        
+        if len(acc_values) == 0:
+            return None
+        
+        acc_values = np.array(acc_values)
+        return {
+            'sample_count': len(acc_values),
+            'mean': float(np.mean(acc_values)),
+            'std': float(np.std(acc_values)),
+            'min': float(np.min(acc_values)),
+            'median': float(np.median(acc_values)),
+            'max': float(np.max(acc_values)),
+            'skewness': float(stats.skew(acc_values)),
+            'kurtosis': float(stats.kurtosis(acc_values))
+        }
+    
+    def _collect_feature_map_stats(self) -> Dict:
+        """收集特征图统计信息"""
+        feat_values = []
+        sample_limit = min(5, len(self.metadata))
+        
+        for item in self.metadata[:sample_limit]:
+            scenario_id = item['scenario_id']
+            filename = os.path.join(self.data_dir, f'scenario_{scenario_id:04d}.h5')
+            try:
+                with h5py.File(filename, 'r') as hf:
+                    if 'feature_maps' in hf:
+                        dset = hf['feature_maps']
+                        num_windows = dset.shape[0]
+                        read_count = min(3, num_windows)
+                        subset = dset[0:read_count]
+                        feat_values.extend(subset.flatten())
+            except:
+                pass
+        
+        if len(feat_values) == 0:
+            return None
+        
+        feat_values = np.array(feat_values)
+        return {
+            'sample_count': len(feat_values),
+            'mean': float(np.mean(feat_values)),
+            'std': float(np.std(feat_values)),
+            'min': float(np.min(feat_values)),
+            'median': float(np.median(feat_values)),
+            'max': float(np.max(feat_values)),
+            'range': float(np.max(feat_values) - np.min(feat_values))
+        }
+    
+    def _collect_severity_stats(self) -> Dict:
+        """收集损伤严重程度统计信息"""
+        severity_data = []
+        for item in self.metadata:
+            severity_ratios = item.get('severity_ratios', [])
+            severity_data.extend(severity_ratios)
+        
+        if len(severity_data) == 0:
+            return None
+        
+        severity_data = np.array(severity_data)
+        
+        # 分区间统计
+        bins = [0, 0.2, 0.4, 0.6, 0.8, 1.0]
+        bin_labels = ['0-20%', '20-40%', '40-60%', '60-80%', '80-100%']
+        bin_counts, _ = np.histogram(severity_data, bins=bins)
+        
+        bin_stats = {}
+        for label, count in zip(bin_labels, bin_counts):
+            bin_stats[label] = int(count)
+        
+        return {
+            'total_samples': len(severity_data),
+            'mean': float(np.mean(severity_data)),
+            'std': float(np.std(severity_data)),
+            'min': float(np.min(severity_data)),
+            'median': float(np.median(severity_data)),
+            'max': float(np.max(severity_data)),
+            'bin_distribution': bin_stats
+        }
+
     def generate_visualizations(self, output_dir: str = None):
         """生成可视化图表"""
         if output_dir is None:

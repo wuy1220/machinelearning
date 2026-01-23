@@ -491,6 +491,10 @@ class OffshoreDamageDetectionSystem:
         print("✓ 数据加载完成！")
         print("=" * 60)
         
+        del self.raw_signals 
+        del self.raw_images
+        import gc
+        gc.collect()
         return train_loader, val_loader, test_loader
 
 
@@ -953,7 +957,7 @@ def main():
     # ==================== 参数设置 ====================
     NUM_CLASSES = 5  # 损伤类别数（0=健康，1-4=不同损伤类型）
     NUM_SENSORS = 8  # 传感器数量
-    BATCH_SIZE = 32
+    BATCH_SIZE = 16
     TRAIN_RATIO = 0.6
     VAL_RATIO = 0.2
     TEST_RATIO = 0.2
