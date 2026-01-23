@@ -1,6 +1,6 @@
 """
 海洋导管架平台损伤检测系统
-基于MLP-ResNet50多模态深度学习框架
+基于MLP-ResNet50多模态深度学习框架(为测试便利，将resnet50改为mobilenet v3)
 参考论文: "Multimodal deep learning with integrated automatic labeling for structural damage detection"
 
 修改说明：
@@ -245,7 +245,7 @@ class MultiModalDamageDetector(nn.Module):
             nn.Dropout(0.3),
             nn.Linear(256, self.mlp_output_dim)
         )
-        
+
         # ==================== 特征融合与分类层 ====================
         fused_dim = self.mlp_output_dim * 2
         self.fusion_layers = nn.Sequential(
@@ -604,7 +604,8 @@ class OffshoreDamageDetectionSystem:
                 train_total += labels.size(0)
                 train_correct += (predicted == labels).sum().item()
                 
-                print(f"Processing Batch {batch_idx + 1}/{len(train_loader)} - Loss: {loss.item():.4f}")
+                if (batch_idx + 1) % 10 == 0:
+                    print(f"Processing Batch {batch_idx + 1}/{len(train_loader)} - Loss: {loss.item():.4f}")
             # 验证阶段
             self.model.eval()
             val_loss = 0.0
