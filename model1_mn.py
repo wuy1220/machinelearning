@@ -9,6 +9,7 @@
 - 移除了main()中的完整演示流程
 - 保留核心功能：信号预处理、数据加载、模型训练、损伤定位
 - 新数据流程：new_mdof_v1.py生成HDF5 → load_h5.py加载 → load_simulation_data处理 → 训练
+- 分类数量改为2，以测试其对于早期损伤的检测能力
 """
 
 import numpy as np
@@ -303,7 +304,7 @@ class OffshoreDamageDetectionSystem:
     - 保留训练、评估、预测等核心功能
     """
     
-    def __init__(self, num_classes: int = 5, 
+    def __init__(self, num_classes: int = 2, 
                  device: str = 'cuda' if torch.cuda.is_available() else 'cpu'):
         self.num_classes = num_classes
         self.device = device
