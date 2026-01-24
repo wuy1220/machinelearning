@@ -203,7 +203,7 @@ def main_with_new_simulator():
     print(f"  ✓ 类别数: {NUM_CLASSES}")
     print(f"  ✓ 模型参数量: {sum(p.numel() for p in detection_system.model.parameters()):,}")
     
-    full_dataset.transform = detection_system.train_transform # 验证和测试集会单独覆盖
+    full_dataset.transform = detection_system.gvr_transform # 验证和测试集会单独覆盖
 
     # ==================== 3. 划分数据集 (关键修改) ====================
     print("\n[步骤3] 划分数据集 (按Scenario)...")
@@ -272,8 +272,8 @@ def main_with_new_simulator():
     # 验证集和测试集需要重新创建一个 dataset 实例或修改 transform 属性，
     # 因为原始 dataset 的 transform 可能是 train_transform
     # 这里为了简单，我们克隆一个 dataset 用于 val/test
-    val_dataset_base = H5LazyDataset(DATA_DIR, feature_selection='mean', transform=detection_system.test_transform)
-    test_dataset_base = H5LazyDataset(DATA_DIR, feature_selection='mean', transform=detection_system.test_transform)
+    val_dataset_base = H5LazyDataset(DATA_DIR, feature_selection='mean', transform=detection_system.gvr_transform)
+    test_dataset_base = H5LazyDataset(DATA_DIR, feature_selection='mean', transform=detection_system.gvr_transform)
     
     val_dataset = Subset(val_dataset_base, val_idx)
     test_dataset = Subset(test_dataset_base, test_idx)
