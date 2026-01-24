@@ -8,7 +8,7 @@ import os
 from tqdm import tqdm
 from typing import Tuple, List, Dict, Optional
 import json
-
+import random
 
 class ImprovedJacketPlatformSimulator:
     """
@@ -571,8 +571,9 @@ class ImprovedDamageDataGenerator:
         
         # 1.5. 添加噪声
         # mems加速度计的snr在40-80db之间，顶级光纤加速度计可达110db+
-        healthy_response = self.simulator.add_realistic_noise(healthy_response, snr_db=55, seed=current_seed_healthy, amplitude_ratio=0.0005) 
-        damaged_response = self.simulator.add_realistic_noise(damaged_response, snr_db=55, seed=current_seed_damaged, amplitude_ratio=0.0005) 
+        snr_db = random.randint(50, 70)
+        healthy_response = self.simulator.add_realistic_noise(healthy_response, snr_db=snr_db, seed=current_seed_healthy, amplitude_ratio=0.0005) 
+        damaged_response = self.simulator.add_realistic_noise(damaged_response, snr_db=snr_db, seed=current_seed_damaged, amplitude_ratio=0.0005) 
         
         # 2. 使用时序堆叠提取特征
         stacked_features, num_samples = self.gvr_extractor.extract_stacked_gvr_features(
@@ -778,8 +779,8 @@ if __name__ == "__main__":
     generator.generate_comprehensive_dataset(
         num_scenarios=100,
         healthy_ratio=0.3,
-        min_severity=0.6,  # 测试模型能力，如果跑通再调小
-        max_severity=0.8
+        min_severity=0.3,  # 测试模型能力，如果跑通再调小
+        max_severity=0.9
     )
     
     print("\n" + "=" * 60)

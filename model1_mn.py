@@ -316,6 +316,8 @@ class OffshoreDamageDetectionSystem:
         
         # 定义图像变换, gvr的图像变换不能使用 flip 和 rotate
         self.gvr_transform = transforms.Compose([
+            # 由于通道是物理特征，这里的 jitter 参数建议设置小一点
+            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.1, hue=0),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
         ])
 

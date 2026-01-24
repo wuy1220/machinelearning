@@ -12,6 +12,10 @@ from scipy import stats
 import bisect
 from sklearn.model_selection import train_test_split
 
+plt.rcParams['font.sans-serif'] = ['SimHei']
+plt.rcParams['axes.unicode_minus'] = False # 解决负号显示问题
+
+
 class H5LazyDataset(Dataset):
     """
     优化版数据集：
