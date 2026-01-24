@@ -436,7 +436,7 @@ def main():
     # 提取所有文件的特征图
     stats = extractor.extract_all_files(
         pattern='scenario_*.h5',
-        save_all=True,      # 保存到all_samples目录
+        save_all=False,      # 保存到all_samples目录
         save_split=True,    # 保存分通道图像
         max_files=None      # None表示处理所有文件
     )

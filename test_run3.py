@@ -157,7 +157,7 @@ def main_with_new_simulator():
     print("=" * 70)
     
     # ==================== 参数配置 ====================
-    DATA_DIR = './jacket_damage_data'
+    DATA_DIR = './jacket_damage_data_timespace'
     NUM_CLASSES = 5  # 0=健康, 1-3=单损伤不同程度, 4=多损伤
     BATCH_SIZE = 32
     EPOCHS = 50
@@ -169,8 +169,6 @@ def main_with_new_simulator():
     
     if not os.path.exists(DATA_DIR):
         print(f"✗ 错误: 数据目录 {DATA_DIR} 不存在！")
-        print("  请先运行以下命令生成数据:")
-        print("  python new_mdof_v1.py")
         return
     
     full_dataset = H5LazyDataset(

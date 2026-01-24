@@ -732,7 +732,7 @@ if __name__ == "__main__":
     print("\n开始生成数据集")
     print("=" * 60)
     generator.generate_comprehensive_dataset(
-        num_scenarios=10,
+        num_scenarios=100,
         healthy_ratio=0.3,
         min_severity=0.2,
         max_severity=0.8
