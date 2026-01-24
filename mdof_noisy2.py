@@ -559,8 +559,8 @@ class ImprovedDamageDataGenerator:
             save_data: 是否保存数据
         """
         # 采用动态且可复现的种子，防止相同噪声模式导致数据泄漏
-        current_seed_healthy = 42 + scenario_id * 2
-        current_seed_damaged = 24 + scenario_id * 2
+        current_seed_healthy = 42000 + scenario_id * 2
+        current_seed_damaged = 24 + scenario_id
 
         # 1. 生成激励和响应
         F1 = self.simulator.generate_excitation(excitation_type='filtered_noise', seed=current_seed_healthy)
@@ -778,8 +778,8 @@ if __name__ == "__main__":
     generator.generate_comprehensive_dataset(
         num_scenarios=100,
         healthy_ratio=0.3,
-        min_severity=0.05, # 目标是检测早期损伤，因此设置较低值
-        max_severity=0.1
+        min_severity=0.1, # 目标是检测早期损伤，因此设置较低值
+        max_severity=0.15
     )
     
     print("\n" + "=" * 60)

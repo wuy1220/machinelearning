@@ -314,20 +314,8 @@ class OffshoreDamageDetectionSystem:
         self.model = MultiModalDamageDetector(num_classes=num_classes).to(device)
         self.scaler = MinMaxScaler()
         
-        # 定义图像变换
-        self.image_transform = transforms.Compose([
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], 
-                                 std=[0.229, 0.224, 0.225]),
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomRotation(degrees=15),
-        ])
-
-        self.train_transform = transforms.Compose([
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomRotation(degrees=15),
-            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-        ])
-        self.test_transform = transforms.Compose([
+        # 定义图像变换, gvr的图像变换不能使用 flip 和 rotate
+        self.gvr_transform = transforms.Compose([
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
         ])
 
@@ -485,15 +473,15 @@ class OffshoreDamageDetectionSystem:
         # 创建数据集
         train_dataset = OffshoreStructureDataset(
             X_train, img_train, y_train,
-            transform=self.train_transform
+            transform=self.gvr_transform
         )
         val_dataset = OffshoreStructureDataset(
             X_val, img_val, y_val,
-            transform=self.test_transform
+            transform=self.gvr_transform
         )
         test_dataset = OffshoreStructureDataset(
             X_test, img_test, y_test,
-            transform=self.test_transform
+            transform=self.gvr_transform
         )
         
         # 创建数据加载器

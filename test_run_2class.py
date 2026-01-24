@@ -164,7 +164,7 @@ def main_with_new_simulator():
     BATCH_SIZE = 32
     EPOCHS = 50
     LEARNING_RATE = 0.001
-    EARLY_STOPPING_PATIENCE = 10
+    EARLY_STOPPING_PATIENCE = 5
     
     # ==================== 1. 加载数据 ====================
     print("\n[步骤1] 加载仿真数据...")
@@ -181,7 +181,7 @@ def main_with_new_simulator():
     from sklearn.preprocessing import MinMaxScaler
     scaler = MinMaxScaler()
     scaler.fit(full_dataset.feature_cache)
-     
+
     # 检查数据量
     n_samples = len(full_dataset)
     if n_samples < 5000:
