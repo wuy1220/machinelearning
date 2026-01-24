@@ -778,8 +778,8 @@ if __name__ == "__main__":
     generator.generate_comprehensive_dataset(
         num_scenarios=100,
         healthy_ratio=0.3,
-        min_severity=0.1, # 目标是检测早期损伤，因此设置较低值
-        max_severity=0.15
+        min_severity=0.4,  # 测试模型能力，如果跑通再调小
+        max_severity=0.5
     )
     
     print("\n" + "=" * 60)

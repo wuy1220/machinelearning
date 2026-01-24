@@ -553,7 +553,7 @@ class OffshoreDamageDetectionSystem:
             history: 训练历史 {loss, accuracy, val_loss, val_accuracy}
         """
         criterion = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
+        optimizer = optim.Adam(self.model.parameters(), lr=learning_rate, weight_decay=5e-5)
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode='min', factor=0.5, patience=5
         )
