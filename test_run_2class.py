@@ -84,6 +84,8 @@ class H5LazyDataset(Dataset):
         
         # 将列表转为 numpy 数组，加快索引访问速度
         self.feature_cache = np.array(self.feature_cache, dtype=np.float32)
+        from sklearn.preprocessing import MinMaxScaler
+        self.scaler = MinMaxScaler()
         self.total_samples = total_samples
         print(f"[Optimization] 特征缓存完成！")
         print(f"  - 缓存特征形状: {self.feature_cache.shape}")
@@ -162,7 +164,7 @@ def main_with_new_simulator():
     BATCH_SIZE = 32
     EPOCHS = 50
     LEARNING_RATE = 0.001
-    EARLY_STOPPING_PATIENCE = 15
+    EARLY_STOPPING_PATIENCE = 10
     
     # ==================== 1. 加载数据 ====================
     print("\n[步骤1] 加载仿真数据...")
@@ -176,7 +178,10 @@ def main_with_new_simulator():
         feature_selection='mean',
         transform=None  # 暂时不传 transform，后续在 system 里统一加
     )
-    
+    from sklearn.preprocessing import MinMaxScaler
+    scaler = MinMaxScaler()
+    scaler.fit(full_dataset.feature_cache)
+     
     # 检查数据量
     n_samples = len(full_dataset)
     if n_samples < 5000:
@@ -201,22 +206,65 @@ def main_with_new_simulator():
     full_dataset.transform = detection_system.train_transform # 验证和测试集会单独覆盖
 
     # ==================== 3. 划分数据集 (关键修改) ====================
-    print("\n[步骤3] 划分数据集索引...")
-    
-    # 生成索引列表 [0, 1, 2, ..., n_samples-1]
-    indices = np.arange(n_samples)
-    
-    # 使用 train_test_split 只划分"索引"，极其节省内存
-    train_idx, temp_idx = train_test_split(
-        indices, test_size=0.4, random_state=42
+    print("\n[步骤3] 划分数据集 (按Scenario)...")
+
+    # 1. 构建场景索引列表
+    # H5LazyDataset 已经有了 file_metadata，我们需要找出每个文件对应的样本范围
+    scenario_indices = [] # 存储每个场景的样本索引范围 [(start_idx, end_idx, file_idx), ...]
+
+    current_idx = 0
+    # 注意：这里需要根据你的 H5LazyDataset 结构来获取每个文件的样本数
+    # 假设你可以从 dataset 获取文件列表和窗口数
+    for file_idx, fname in enumerate(full_dataset.h5_files):
+        fpath = os.path.join(DATA_DIR, fname)
+        with h5py.File(fpath, 'r') as hf:
+            n_windows = hf['feature_maps'].shape[0]
+            end_idx = current_idx + n_windows
+            scenario_indices.append({
+                'file_idx': file_idx,
+                'start': current_idx,
+                'end': end_idx,
+                'label': int(hf['damage_class'][0]) # 用于分层抽样
+            })
+            current_idx = end_idx
+
+    # 2. 对场景进行划分 (而不是对样本)
+    n_scenarios = len(scenario_indices)
+    scenario_indices_list = np.arange(n_scenarios)
+
+    # 获取每个场景的标签列表用于分层
+    scenario_labels = [s['label'] for s in scenario_indices]
+
+    # 划分场景索引
+    train_scenario_idx, temp_scenario_idx = train_test_split(
+        scenario_indices_list, 
+        test_size=0.4, 
+        random_state=42,
+        stratify=scenario_labels # 保持健康/损伤比例
     )
-    val_idx, test_idx = train_test_split(
-        temp_idx, test_size=0.5, random_state=42
+
+    val_scenario_idx, test_scenario_idx = train_test_split(
+        temp_scenario_idx, 
+        test_size=0.5, 
+        random_state=42,
+        stratify=[scenario_labels[i] for i in temp_scenario_idx]
     )
-    
-    print(f"  ✓ 训练集索引数: {len(train_idx)}")
-    print(f"  ✓ 验证集索引数: {len(val_idx)}")
-    print(f"  ✓ 测试集索引数: {len(test_idx)}")
+
+    # 3. 将场景索引展开回样本索引
+    def expand_indices(scenario_idx_list, scenario_indices):
+        sample_indices = []
+        for s_idx in scenario_idx_list:
+            s_info = scenario_indices[s_idx]
+            sample_indices.extend(range(s_info['start'], s_info['end']))
+        return np.array(sample_indices)
+
+    train_idx = expand_indices(train_scenario_idx, scenario_indices)
+    val_idx = expand_indices(val_scenario_idx, scenario_indices)
+    test_idx = expand_indices(test_scenario_idx, scenario_indices)
+
+    print(f"  ✓ 训练集场景数: {len(train_scenario_idx)}, 样本数: {len(train_idx)}")
+    print(f"  ✓ 验证集场景数: {len(val_scenario_idx)}, 样本数: {len(val_idx)}")
+    print(f"  ✓ 测试集场景数: {len(test_scenario_idx)}, 样本数: {len(test_idx)}")
 
     # 使用 Subset 创建子数据集 (这只是对索引的包装，不加载实际数据)
     # 训练集使用训练时的 transform (包含数据增强)

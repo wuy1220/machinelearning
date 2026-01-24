@@ -605,7 +605,7 @@ class OffshoreDamageDetectionSystem:
                 train_total += labels.size(0)
                 train_correct += (predicted == labels).sum().item()
                 
-                if (batch_idx + 1) % 10 == 0:
+                if (batch_idx + 1) % 15 == 0:  # 按epoch打印进度太慢，每15个batch打印一次训练进度
                     print(f"Processing Batch {batch_idx + 1}/{len(train_loader)} - Loss: {loss.item():.4f}")
             # 验证阶段
             self.model.eval()

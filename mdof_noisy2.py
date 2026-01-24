@@ -558,15 +558,21 @@ class ImprovedDamageDataGenerator:
             scenario_id: 场景ID
             save_data: 是否保存数据
         """
+        # 采用动态且可复现的种子，防止相同噪声模式导致数据泄漏
+        current_seed_healthy = 42 + scenario_id * 2
+        current_seed_damaged = 24 + scenario_id * 2
+
         # 1. 生成激励和响应
-        F = self.simulator.generate_excitation(excitation_type='filtered_noise')
-        healthy_response = self.simulator.simulate_response(self.simulator.K0, F)
+        F1 = self.simulator.generate_excitation(excitation_type='filtered_noise', seed=current_seed_healthy)
+        F2 = self.simulator.generate_excitation(excitation_type='filtered_noise', seed=current_seed_damaged)
+        healthy_response = self.simulator.simulate_response(self.simulator.K0, F1)
         K_damaged = self.simulator.apply_damage(damaged_dofs, severity_ratios)
-        damaged_response = self.simulator.simulate_response(K_damaged, F)
+        damaged_response = self.simulator.simulate_response(K_damaged, F2)
         
         # 1.5. 添加噪声
-        healthy_response = self.simulator.add_realistic_noise(healthy_response, snr_db=50, seed=42)  # 对于性能中下水平的普通mems加速计，SNR设定为50dB
-        damaged_response = self.simulator.add_realistic_noise(damaged_response, snr_db=50, seed=42)
+        # mems加速度计的snr在40-80db之间，顶级光纤加速度计可达110db+
+        healthy_response = self.simulator.add_realistic_noise(healthy_response, snr_db=55, seed=current_seed_healthy, amplitude_ratio=0.0005) 
+        damaged_response = self.simulator.add_realistic_noise(damaged_response, snr_db=55, seed=current_seed_damaged, amplitude_ratio=0.0005) 
         
         # 2. 使用时序堆叠提取特征
         stacked_features, num_samples = self.gvr_extractor.extract_stacked_gvr_features(
@@ -748,7 +754,7 @@ if __name__ == "__main__":
         window_length=2000,          # 单窗口长度
         step_size=50,                # 滑动步长
         num_stack_windows=100,       # 堆叠窗口数（=图像高度）
-        cutoff_freq=2.0
+        cutoff_freq=1.0
     )
     
     print(f"配置参数:")
@@ -773,7 +779,7 @@ if __name__ == "__main__":
         num_scenarios=100,
         healthy_ratio=0.3,
         min_severity=0.05, # 目标是检测早期损伤，因此设置较低值
-        max_severity=0.2
+        max_severity=0.1
     )
     
     print("\n" + "=" * 60)

@@ -252,7 +252,7 @@ if __name__ == "__main__":
     OUTPUT_DIR = './extracted_gvr_fast'
     
     # 核心优化参数
-    SAMPLES_PER_FILE = 5  # 【关键优化】1=每个文件只取最中间1张，'all'=取全部(极慢)
+    SAMPLES_PER_FILE = 20  # 【关键优化】1=每个文件只取最中间1张，'all'=取全部(极慢)
     N_WORKERS = 8          # 【关键优化】并行进程数，建议设为CPU核心数
     MAX_FILES = None      # None=处理所有文件, 50=只处理前50个(测试用)
     # ===================
