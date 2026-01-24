@@ -779,7 +779,7 @@ if __name__ == "__main__":
     generator.generate_comprehensive_dataset(
         num_scenarios=100,
         healthy_ratio=0.3,
-        min_severity=0.3,  # 测试模型能力，如果跑通再调小
+        min_severity=0.2,  # 测试模型能力，如果跑通再调小
         max_severity=0.9
     )
     

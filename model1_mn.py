@@ -214,7 +214,7 @@ class MultiModalDamageDetector(nn.Module):
                 nn.Linear(input_dim, hidden_dim),
                 nn.BatchNorm1d(hidden_dim),
                 nn.ReLU(),
-                nn.Dropout(0.3)
+                nn.Dropout(0.25),  # 因为 16 维特征量很少，丢弃太多可能丢失关键统计信息。
             ])
             input_dim = hidden_dim
             
@@ -243,7 +243,7 @@ class MultiModalDamageDetector(nn.Module):
             nn.Linear(resnet_feature_dim, 256),  # 可以适当减小中间层维度，例如从512降到256，进一步加速
             nn.BatchNorm1d(256),
             nn.ReLU(),
-            nn.Dropout(0.3),
+            nn.Dropout(0.3),  
             nn.Linear(256, self.mlp_output_dim)
         )
 
@@ -253,7 +253,7 @@ class MultiModalDamageDetector(nn.Module):
             nn.Linear(fused_dim, 128),
             nn.BatchNorm1d(128),
             nn.ReLU(),
-            nn.Dropout(0.4),
+            nn.Dropout(0.5),  # 建议: 这里是重点防御区域，可以保持在 0.4 甚至 0.5
             nn.Linear(128, 64),
             nn.BatchNorm1d(64),
             nn.ReLU(),
@@ -317,7 +317,7 @@ class OffshoreDamageDetectionSystem:
         # 定义图像变换, gvr的图像变换不能使用 flip 和 rotate
         self.gvr_transform = transforms.Compose([
             # 由于通道是物理特征，这里的 jitter 参数建议设置小一点
-            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.1, hue=0),
+            transforms.ColorJitter(brightness=0.15, contrast=0.15, saturation=0.1, hue=0),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
         ])
 

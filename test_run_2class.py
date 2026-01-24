@@ -73,6 +73,15 @@ class H5LazyDataset(Dataset):
                     else:
                         signal = window_acc[0, :]
                     
+                    # === 添加增强逻辑 ===
+                    # 1. 添加高斯噪声 (模拟传感器不确定性)
+                    noise_level = np.random.uniform(0.0, 0.005) # 随机噪声强度
+                    signal = signal + np.random.normal(0, noise_level, signal.shape)
+
+                    # 2. 随机缩放 (模拟信号增益变化)
+                    scale_factor = np.random.uniform(0.95, 1.05)
+                    signal = signal * scale_factor
+
                     # 提取特征并存入缓存
                     feat = self._extract_statistical_features(signal)
                     self.feature_cache.append(feat)
