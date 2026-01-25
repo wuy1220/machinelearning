@@ -588,13 +588,13 @@ class OffshoreDamageDetectionSystem:
         # 其他层使用 0.001
         optimizer = optim.Adam([
             {'params': base_params, 'lr': learning_rate},
-            {'params': finetune_params, 'lr': learning_rate * 0.1} 
+            {'params': finetune_params, 'lr': learning_rate * 0.5} 
         ], weight_decay=1e-4)
 
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode='min', factor=0.5, patience=5
         )
-        
+
         history = {
             'loss': [],
             'accuracy': [],
