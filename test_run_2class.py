@@ -1,9 +1,9 @@
 import numpy as np
 import torch
+import torch.nn as nn
 #from model1 import OffshoreDamageDetectionSystem
 from model1_mn import OffshoreDamageDetectionSystem
 import h5py
-from load_h5 import load_h5_dataset
 import matplotlib.pyplot as plt
 import os
 from torch.utils.data import Subset
@@ -40,8 +40,7 @@ class H5LazyDataset(Dataset):
         total_samples = 0
         
         # === 新增：预计算特征缓存 ===
-        # 预估内存占用：100场景 * 1160样本 * 16维 * 4字节 ≈ 7.4MB，完全安全
-        print("[Optimization] 正在预计算统计特征到内存 (这需要几分钟，但会极大加速训练)...")
+        print("[Optimization] 正在预计算统计特征到内存")
         self.feature_cache = [] 
         
         for fname in self.h5_files:
@@ -75,7 +74,7 @@ class H5LazyDataset(Dataset):
                     
                     # === 添加增强逻辑 ===
                     # 1. 添加高斯噪声 (模拟传感器不确定性)
-                    noise_level = np.random.uniform(0.0, 0.005) # 随机噪声强度
+                    noise_level = np.random.uniform(0.0, 0.001) # 随机噪声强度
                     signal = signal + np.random.normal(0, noise_level, signal.shape)
 
                     # 2. 随机缩放 (模拟信号增益变化)
@@ -102,7 +101,6 @@ class H5LazyDataset(Dataset):
         self.total_samples = total_samples
         print(f"[Optimization] 特征缓存完成！")
         print(f"  - 缓存特征形状: {self.feature_cache.shape}")
-        print(f"  - 预估内存占用: {self.feature_cache.nbytes / 1024 / 1024:.2f} MB")
 
     def __len__(self):
         return self.total_samples
@@ -162,6 +160,99 @@ class H5LazyDataset(Dataset):
         ]
         return np.array(features)
 
+
+
+
+def run_ablation_study(model, test_loader, device, class_names):
+    """
+    执行消融实验，评估各模态的独立贡献
+    """
+    model.eval()
+    criterion = nn.CrossEntropyLoss()
+    
+    # 初始化统计字典
+    results = {
+        'Full Model': {'correct': 0, 'total': 0, 'loss': 0.0},
+        'Image Only': {'correct': 0, 'total': 0, 'loss': 0.0},
+        'Time Series Only': {'correct': 0, 'total': 0, 'loss': 0.0}
+    }
+    
+    print("\n" + "="*60)
+    print("开始进行消融实验")
+    print("="*60)
+    
+    with torch.no_grad():
+        for time_series, images, labels in test_loader:
+            time_series = time_series.to(device)
+            images = images.to(device)
+            labels = labels.to(device)
+            batch_size = labels.size(0)
+            
+            # 1. Full Model (正常推理)
+            outputs_full = model(time_series, images)
+            loss_full = criterion(outputs_full, labels)
+            _, predicted_full = torch.max(outputs_full.data, 1)
+            results['Full Model']['correct'] += (predicted_full == labels).sum().item()
+            results['Full Model']['total'] += batch_size
+            results['Full Model']['loss'] += loss_full.item() * batch_size
+            
+            # 2. Image Only (将时序输入置零)
+            zero_time_series = torch.zeros_like(time_series)
+            outputs_img = model(zero_time_series, images)
+            loss_img = criterion(outputs_img, labels)
+            _, predicted_img = torch.max(outputs_img.data, 1)
+            results['Image Only']['correct'] += (predicted_img == labels).sum().item()
+            results['Image Only']['total'] += batch_size
+            results['Image Only']['loss'] += loss_img.item() * batch_size
+            
+            # 3. Time Series Only (将图像输入置零)
+            # 注意：由于图像已归一化，置零代表“中性”输入（相当于原始均值）
+            # 对于 MobileNet 这种归一化过的模型，零向量通常作为“空”输入是可以接受的
+            zero_images = torch.zeros_like(images)
+            outputs_time = model(time_series, zero_images)
+            loss_time = criterion(outputs_time, labels)
+            _, predicted_time = torch.max(outputs_time.data, 1)
+            results['Time Series Only']['correct'] += (predicted_time == labels).sum().item()
+            results['Time Series Only']['total'] += batch_size
+            results['Time Series Only']['loss'] += loss_time.item() * batch_size
+
+    # 计算并打印结果
+    print(f"{'模型配置':<20s} | {'Loss':<10s} | {'Accuracy':<10s} | {'贡献度':<10s}")
+    print("-" * 60)
+    
+    full_acc = 0
+    full_loss = 0
+    
+    for name, res in results.items():
+        acc = 100 * res['correct'] / res['total']
+        loss = res['loss'] / res['total']
+        
+        if name == 'Full Model':
+            full_acc = acc
+            full_loss = loss
+            marker = "(Baseline)"
+        else:
+            diff = acc - full_acc
+            marker = f"({diff:+.2f}%)"
+            
+        print(f"{name:<20s} | {loss:<10.4f} | {acc:<10.2f}% | {marker}")
+    
+    print("-" * 60)
+    
+    # 简单的结论分析
+    img_only_acc = 100 * results['Image Only']['correct'] / results['Image Only']['total']
+    time_only_acc = 100 * results['Time Series Only']['correct'] / results['Time Series Only']['total']
+    
+    if full_acc > img_only_acc and full_acc > time_only_acc:
+        print("✓ 结论: 模型有效融合了两个模态的信息，融合效果优于单模态。")
+    elif abs(full_acc - img_only_acc) < 1.0:
+        print("⚠ 结论: 模型性能主要依赖于图像分支，时序特征贡献较小。")
+    elif abs(full_acc - time_only_acc) < 1.0:
+        print("⚠ 结论: 模型性能主要依赖于时序分支，图像特征贡献较小。")
+    else:
+        print("ℹ 结论: 多模态融合带来了提升，但其中一个模态起主导作用。")
+
+    print("="*60)
 
 def main_with_new_simulator():
     """
@@ -342,7 +433,15 @@ def main_with_new_simulator():
         class_names,
         save_path='confusion_matrix.png'
     )
-    
+    # ==================== 新增：消融实验 ====================
+    # 在常规评估之后执行
+    run_ablation_study(
+        model=detection_system.model, 
+        test_loader=test_loader, 
+        device=detection_system.device,
+        class_names=class_names
+    )
+
     # ==================== 6. 保存模型 ====================
     print("\n[步骤6] 保存模型...")
     model_path = 'new_simulator_trained_model.pth'

@@ -214,7 +214,7 @@ class MultiModalDamageDetector(nn.Module):
                 nn.Linear(input_dim, hidden_dim),
                 nn.BatchNorm1d(hidden_dim),
                 nn.ReLU(),
-                nn.Dropout(0.25),  # 因为 16 维特征量很少，丢弃太多可能丢失关键统计信息。
+                nn.Dropout(0.2),  # 因为 16 维特征量很少，丢弃太多可能丢失关键统计信息。
             ])
             input_dim = hidden_dim
             
@@ -243,7 +243,7 @@ class MultiModalDamageDetector(nn.Module):
             nn.Linear(resnet_feature_dim, 256),  # 可以适当减小中间层维度，例如从512降到256，进一步加速
             nn.BatchNorm1d(256),
             nn.ReLU(),
-            nn.Dropout(0.3),  
+            nn.Dropout(0.25),  
             nn.Linear(256, self.mlp_output_dim)
         )
 
@@ -251,14 +251,14 @@ class MultiModalDamageDetector(nn.Module):
         fused_dim = self.mlp_output_dim * 2
         '''
         self.fusion_layers = nn.Sequential(
-            nn.Linear(fused_dim, 128),
-            nn.BatchNorm1d(128),
-            nn.ReLU(),
-            nn.Dropout(0.5),  # 建议: 这里是重点防御区域，可以保持在 0.4 甚至 0.5
-            nn.Linear(128, 64),
+            nn.Linear(fused_dim, 64),
             nn.BatchNorm1d(64),
             nn.ReLU(),
-            nn.Linear(64, num_classes)
+            nn.Dropout(0.2),  # 建议: 这里是重点防御区域，可以保持在 0.4 甚至 0.5
+            nn.Linear(64, 32),
+            nn.BatchNorm1d(32),
+            nn.ReLU(),
+            nn.Linear(32, num_classes)
         )
         '''
         # fused_dim 为 32 (MLP的16 + CNN的16)
@@ -325,7 +325,7 @@ class OffshoreDamageDetectionSystem:
         # 定义图像变换, gvr的图像变换不能使用 flip 和 rotate
         self.gvr_transform = transforms.Compose([
             # 由于通道是物理特征，这里的 jitter 参数建议设置小一点
-            transforms.ColorJitter(brightness=0.15, contrast=0.15, saturation=0.1, hue=0),
+            transforms.ColorJitter(brightness=0.2, contrast=0.15, saturation=0.1, hue=0),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ])
 
@@ -562,7 +562,7 @@ class OffshoreDamageDetectionSystem:
         返回:
             history: 训练历史 {loss, accuracy, val_loss, val_accuracy}
         """
-        criterion = nn.CrossEntropyLoss(label_smoothing=0.1) # 标签平滑，防止过拟合
+        criterion = nn.CrossEntropyLoss(label_smoothing=0.05) # 用较低的标签平滑，防止过拟合
         optimizer = optim.Adam(self.model.parameters(), lr=learning_rate, weight_decay=1e-4)
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode='min', factor=0.5, patience=5
@@ -603,7 +603,7 @@ class OffshoreDamageDetectionSystem:
                 train_total += labels.size(0)
                 train_correct += (predicted == labels).sum().item()
                 
-                if (batch_idx + 1) % 15 == 0:  # 按epoch打印进度太慢，每15个batch打印一次训练进度
+                if (batch_idx + 1) % 20 == 0:  # 按epoch打印进度太慢
                     print(f"Processing Batch {batch_idx + 1}/{len(train_loader)} - Loss: {loss.item():.4f}")
             # 验证阶段
             self.model.eval()
@@ -655,8 +655,8 @@ class OffshoreDamageDetectionSystem:
             # 打印训练进度
             if (epoch + 1) % 1 == 0:
                 print(f'Epoch [{epoch+1}/{epochs}], '
-                      f'Train Loss: {avg_train_loss:.4f}, Train Acc: {train_accuracy:.2f}%, '
-                      f'Val Loss: {avg_val_loss:.4f}, Val Acc: {val_accuracy:.2f}%')
+                      f'Train Loss: {avg_train_loss:.4f}, Acc: {train_accuracy:.2f}%, '
+                      f'Val Loss: {avg_val_loss:.4f}, Acc: {val_accuracy:.2f}%')
         
         return history
     

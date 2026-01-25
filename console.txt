@@ -1,0 +1,91 @@
+[步骤5] 训练模型...
+  训练轮数: 50
+  学习率: 0.001
+  早停耐心值: 5
+Processing Batch 15/113 - Loss: 0.6758
+Processing Batch 30/113 - Loss: 0.3950
+Processing Batch 45/113 - Loss: 0.6510
+Processing Batch 60/113 - Loss: 0.4080
+Processing Batch 75/113 - Loss: 0.3894
+Processing Batch 90/113 - Loss: 0.4269
+Processing Batch 105/113 - Loss: 0.3966
+Epoch [1/50], Train Loss: 0.4289, Train Acc: 83.97%, Val Loss: 1.3352, Val Acc: 60.17%
+Processing Batch 15/113 - Loss: 0.2280
+Processing Batch 30/113 - Loss: 0.5117
+Processing Batch 45/113 - Loss: 0.2855
+Processing Batch 60/113 - Loss: 0.3630
+Processing Batch 75/113 - Loss: 0.3922
+Processing Batch 90/113 - Loss: 0.2279
+Processing Batch 105/113 - Loss: 0.2208
+Epoch [2/50], Train Loss: 0.2991, Train Acc: 94.50%, Val Loss: 0.5908, Val Acc: 78.58%
+Processing Batch 15/113 - Loss: 0.2093
+Processing Batch 30/113 - Loss: 0.2120
+Processing Batch 45/113 - Loss: 0.3152
+Processing Batch 60/113 - Loss: 0.2308
+Processing Batch 75/113 - Loss: 0.3087
+Processing Batch 90/113 - Loss: 0.2330
+Processing Batch 105/113 - Loss: 0.2237
+Epoch [3/50], Train Loss: 0.2570, Train Acc: 97.08%, Val Loss: 0.4046, Val Acc: 85.92%
+Processing Batch 15/113 - Loss: 0.2086
+Processing Batch 30/113 - Loss: 0.2493
+Processing Batch 45/113 - Loss: 0.2335
+Processing Batch 60/113 - Loss: 0.2169
+Processing Batch 75/113 - Loss: 0.2699
+Processing Batch 90/113 - Loss: 0.2174
+Processing Batch 105/113 - Loss: 0.2245
+Epoch [4/50], Train Loss: 0.2423, Train Acc: 98.00%, Val Loss: 0.2866, Val Acc: 95.25%
+Processing Batch 15/113 - Loss: 0.2629
+Processing Batch 30/113 - Loss: 0.2082
+Processing Batch 45/113 - Loss: 0.2192
+Processing Batch 60/113 - Loss: 0.3348
+Processing Batch 75/113 - Loss: 0.2101
+Processing Batch 90/113 - Loss: 0.3709
+Processing Batch 105/113 - Loss: 0.2124
+Epoch [5/50], Train Loss: 0.2435, Train Acc: 97.69%, Val Loss: 0.4294, Val Acc: 85.25%
+Processing Batch 15/113 - Loss: 0.3467
+Processing Batch 30/113 - Loss: 0.2087
+Processing Batch 75/113 - Loss: 0.2361
+Processing Batch 90/113 - Loss: 0.2411
+Processing Batch 105/113 - Loss: 0.2673
+Epoch [6/50], Train Loss: 0.2225, Train Acc: 98.83%, Val Loss: 0.2971, Val Acc: 93.83%
+Processing Batch 15/113 - Loss: 0.2020
+Processing Batch 30/113 - Loss: 0.2677
+Processing Batch 45/113 - Loss: 0.2470
+Processing Batch 60/113 - Loss: 0.2737
+Processing Batch 75/113 - Loss: 0.2017
+Processing Batch 90/113 - Loss: 0.2011
+Processing Batch 105/113 - Loss: 0.2239
+Epoch [7/50], Train Loss: 0.2260, Train Acc: 98.89%, Val Loss: 0.4093, Val Acc: 83.33%
+Processing Batch 15/113 - Loss: 0.2064
+Processing Batch 30/113 - Loss: 0.2137
+Processing Batch 45/113 - Loss: 0.2027
+Processing Batch 60/113 - Loss: 0.2137
+Processing Batch 75/113 - Loss: 0.2025
+Processing Batch 90/113 - Loss: 0.2189
+Processing Batch 105/113 - Loss: 0.2133
+Epoch [8/50], Train Loss: 0.2240, Train Acc: 98.89%, Val Loss: 0.2994, Val Acc: 94.25%
+Processing Batch 15/113 - Loss: 0.2020
+Processing Batch 30/113 - Loss: 0.2048
+Processing Batch 45/113 - Loss: 0.2057
+Processing Batch 60/113 - Loss: 0.2123
+Processing Batch 75/113 - Loss: 0.2199
+Processing Batch 90/113 - Loss: 0.2031
+Processing Batch 105/113 - Loss: 0.2095
+Early stopping at epoch 9
+
+[步骤5] 评估模型性能...
+
+==================================================
+测试集性能:
+==================================================
+准确率:   0.8642
+精确率:   0.8889
+召回率:   0.8365
+F1分数:   0.8502
+
+[步骤6] 保存模型...
+  ✓ 模型已保存: new_simulator_trained_model.pth
+
+======================================================================
+✓ 训练完成！
+======================================================================
