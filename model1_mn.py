@@ -562,7 +562,7 @@ class OffshoreDamageDetectionSystem:
         返回:
             history: 训练历史 {loss, accuracy, val_loss, val_accuracy}
         """
-        criterion = nn.CrossEntropyLoss(label_smoothing=0.05) # 用较低的标签平滑，防止过拟合
+        criterion = nn.CrossEntropyLoss(label_smoothing=0.07) # 用较低的标签平滑，防止过拟合
         optimizer = optim.Adam(self.model.parameters(), lr=learning_rate, weight_decay=1e-4)
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode='min', factor=0.5, patience=5
