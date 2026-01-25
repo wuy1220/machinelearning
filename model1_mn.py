@@ -249,6 +249,7 @@ class MultiModalDamageDetector(nn.Module):
 
         # ==================== 特征融合与分类层 ====================
         fused_dim = self.mlp_output_dim * 2
+        '''
         self.fusion_layers = nn.Sequential(
             nn.Linear(fused_dim, 128),
             nn.BatchNorm1d(128),
@@ -258,6 +259,13 @@ class MultiModalDamageDetector(nn.Module):
             nn.BatchNorm1d(64),
             nn.ReLU(),
             nn.Linear(64, num_classes)
+        )
+        '''
+        # fused_dim 为 32 (MLP的16 + CNN的16)
+        self.fusion_layers = nn.Sequential(  # 参考论文使用小的全连接层
+            nn.Linear(fused_dim, 16),
+            nn.ReLU(),
+            nn.Linear(16, num_classes) # 你的任务是2分类，论文中是8分类，需根据任务调整
         )
         
     def forward(self, time_series: torch.Tensor, 
@@ -317,8 +325,10 @@ class OffshoreDamageDetectionSystem:
         # 定义图像变换, gvr的图像变换不能使用 flip 和 rotate
         self.gvr_transform = transforms.Compose([
             # 由于通道是物理特征，这里的 jitter 参数建议设置小一点
+            # 尝试使用翻转增强
+            transforms.RandomHorizontalFlip(p=0.5),
             transforms.ColorJitter(brightness=0.15, contrast=0.15, saturation=0.1, hue=0),
-            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ])
 
     

@@ -571,7 +571,7 @@ class ImprovedDamageDataGenerator:
         
         # 1.5. 添加噪声
         # mems加速度计的snr在40-80db之间，顶级光纤加速度计可达110db+
-        snr_db = random.randint(50, 70)
+        snr_db = random.randint(70, 80)
         healthy_response = self.simulator.add_realistic_noise(healthy_response, snr_db=snr_db, seed=current_seed_healthy, amplitude_ratio=0.0005) 
         damaged_response = self.simulator.add_realistic_noise(damaged_response, snr_db=snr_db, seed=current_seed_damaged, amplitude_ratio=0.0005) 
         
@@ -733,7 +733,7 @@ if __name__ == "__main__":
     # ===== 参数配置 =====
     dt = 0.005
     duration = 60.0
-    num_degrees = 30
+    num_degrees = 10  # 自由度数量（传感器数量）
     
     # 初始化仿真器
     print("=" * 60)
@@ -743,7 +743,7 @@ if __name__ == "__main__":
         num_degrees=num_degrees,
         dt=dt,
         duration=duration,
-        damping_ratio=0.05,
+        damping_ratio=0.05,  # 阻尼比
         seed=42
     )
     
@@ -754,8 +754,8 @@ if __name__ == "__main__":
         dt=dt,
         window_length=2000,          # 单窗口长度
         step_size=50,                # 滑动步长
-        num_stack_windows=100,       # 堆叠窗口数（=图像高度）
-        cutoff_freq=1.0
+        num_stack_windows=112,       # 堆叠窗口数（=图像高度）
+        cutoff_freq=10.0             # 滤波截止频率
     )
     
     print(f"配置参数:")
@@ -778,9 +778,9 @@ if __name__ == "__main__":
     print("=" * 60)
     generator.generate_comprehensive_dataset(
         num_scenarios=100,
-        healthy_ratio=0.3,
-        min_severity=0.2,  # 测试模型能力，如果跑通再调小
-        max_severity=0.9
+        healthy_ratio=0.4,
+        min_severity=0.4,  # 测试模型能力，如果跑通再调小
+        max_severity=0.8
     )
     
     print("\n" + "=" * 60)
