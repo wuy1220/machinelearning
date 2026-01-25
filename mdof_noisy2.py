@@ -422,8 +422,9 @@ class TimeStackedGVRFeatureExtractor:
         # 形成时序序列：滑动窗口采样
         stacked_features = []
         num_samples = max(1, num_windows - self.num_stack_windows + 1)
-        
-        for start_idx in range(num_samples):
+        step_size_for_image = self.num_stack_windows // 2  # 重叠采样，增加样本数
+
+        for start_idx in range(0, num_samples, step_size_for_image):
             end_idx = start_idx + self.num_stack_windows
             
             DI_seq = DI_series[start_idx:end_idx]
@@ -755,7 +756,7 @@ if __name__ == "__main__":
         window_length=2000,          # 单窗口长度
         step_size=50,                # 滑动步长
         num_stack_windows=112,       # 堆叠窗口数（=图像高度）
-        cutoff_freq=10.0             # 滤波截止频率
+        cutoff_freq=8.0             # 滤波截止频率
     )
     
     print(f"配置参数:")

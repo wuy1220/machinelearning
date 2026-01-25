@@ -325,8 +325,6 @@ class OffshoreDamageDetectionSystem:
         # 定义图像变换, gvr的图像变换不能使用 flip 和 rotate
         self.gvr_transform = transforms.Compose([
             # 由于通道是物理特征，这里的 jitter 参数建议设置小一点
-            # 尝试使用翻转增强
-            transforms.RandomHorizontalFlip(p=0.5),
             transforms.ColorJitter(brightness=0.15, contrast=0.15, saturation=0.1, hue=0),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ])
@@ -564,7 +562,7 @@ class OffshoreDamageDetectionSystem:
         返回:
             history: 训练历史 {loss, accuracy, val_loss, val_accuracy}
         """
-        criterion = nn.CrossEntropyLoss()
+        criterion = nn.CrossEntropyLoss(label_smoothing=0.1) # 标签平滑，防止过拟合
         optimizer = optim.Adam(self.model.parameters(), lr=learning_rate, weight_decay=1e-4)
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode='min', factor=0.5, patience=5
