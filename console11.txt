@@ -1,0 +1,115 @@
+======================================================================
+使用新仿真器 (HDF5) 数据训练损伤检测模型
+======================================================================
+
+[步骤1] 加载仿真数据...
+[Optimization] 正在构建原始信号索引...
+[Optimization] 索引构建完成，总样本数: 8000
+
+✓ 样本数 (8000) 足够进行训练
+
+[步骤2] 初始化检测系统...
+  ✓ 设备: cpu
+  ✓ 类别数: 2
+  ✓ 模型参数量: 3,241,730
+
+[步骤3] 划分数据集 (按Scenario)...
+  ✓ 训练集场景数: 1200, 样本数: 4800
+  ✓ 验证集场景数: 400, 样本数: 1600
+  ✓ 测试集场景数: 400, 样本数: 1600
+[Optimization] 正在构建原始信号索引...
+[Optimization] 索引构建完成，总样本数: 8000
+[Optimization] 正在构建原始信号索引...
+[Optimization] 索引构建完成，总样本数: 8000
+
+[步骤4] 创建 DataLoader...
+
+[步骤5] 训练模型...
+  训练轮数: 50
+  学习率: 0.001
+  早停耐心值: 5
+Processing Batch 20/150 - Loss: 0.5129
+Processing Batch 40/150 - Loss: 0.4425
+Processing Batch 60/150 - Loss: 0.3679
+Processing Batch 80/150 - Loss: 0.3722
+Processing Batch 100/150 - Loss: 0.3272
+Processing Batch 120/150 - Loss: 0.2241
+Processing Batch 140/150 - Loss: 0.2298
+Epoch [1/50], Train Loss: 0.4012, Acc: 85.65%, Val Loss: 0.7764, Acc: 67.69%
+Processing Batch 20/150 - Loss: 0.2100
+Processing Batch 40/150 - Loss: 0.2091
+Processing Batch 60/150 - Loss: 0.3796
+Processing Batch 80/150 - Loss: 0.2256
+Processing Batch 100/150 - Loss: 0.2145
+Processing Batch 120/150 - Loss: 0.1781
+Processing Batch 140/150 - Loss: 0.2239
+Epoch [2/50], Train Loss: 0.2497, Acc: 95.75%, Val Loss: 0.2499, Acc: 94.44%
+Processing Batch 20/150 - Loss: 0.1739
+Processing Batch 40/150 - Loss: 0.2327
+Processing Batch 60/150 - Loss: 0.1725
+Processing Batch 80/150 - Loss: 0.2558
+Processing Batch 100/150 - Loss: 0.3651
+Processing Batch 120/150 - Loss: 0.2648
+Processing Batch 140/150 - Loss: 0.2102
+Epoch [3/50], Train Loss: 0.2222, Acc: 97.27%, Val Loss: 0.4138, Acc: 83.81%
+Processing Batch 20/150 - Loss: 0.1842
+Processing Batch 40/150 - Loss: 0.1744
+Processing Batch 60/150 - Loss: 0.1738
+Processing Batch 80/150 - Loss: 0.1684
+Processing Batch 100/150 - Loss: 0.1723
+Processing Batch 120/150 - Loss: 0.1698
+Processing Batch 140/150 - Loss: 0.1763
+Epoch [4/50], Train Loss: 0.2011, Acc: 98.40%, Val Loss: 0.6854, Acc: 68.06%
+Processing Batch 20/150 - Loss: 0.2154
+Processing Batch 40/150 - Loss: 0.3128
+Processing Batch 60/150 - Loss: 0.1843
+Processing Batch 80/150 - Loss: 0.1873
+Processing Batch 100/150 - Loss: 0.1927
+Processing Batch 120/150 - Loss: 0.1809
+Processing Batch 140/150 - Loss: 0.1671
+Epoch [5/50], Train Loss: 0.2060, Acc: 97.98%, Val Loss: 0.3431, Acc: 88.94%
+Processing Batch 20/150 - Loss: 0.1991
+Processing Batch 40/150 - Loss: 0.1794
+Processing Batch 60/150 - Loss: 0.1866
+Processing Batch 80/150 - Loss: 0.1994
+Processing Batch 100/150 - Loss: 0.1852
+Processing Batch 120/150 - Loss: 0.1935
+Processing Batch 140/150 - Loss: 0.3019
+Epoch [6/50], Train Loss: 0.1966, Acc: 98.54%, Val Loss: 0.9143, Acc: 62.25%
+Processing Batch 20/150 - Loss: 0.1887
+Processing Batch 40/150 - Loss: 0.2418
+Processing Batch 60/150 - Loss: 0.2217
+Processing Batch 80/150 - Loss: 0.1771
+Processing Batch 100/150 - Loss: 0.1862
+Processing Batch 120/150 - Loss: 0.2070
+Processing Batch 140/150 - Loss: 0.1883
+Early stopping at epoch 7
+
+[步骤5] 评估模型性能...
+
+==================================================
+测试集性能:
+==================================================
+准确率:   0.9263
+精确率:   0.9222
+召回率:   0.9385
+F1分数:   0.9251
+
+============================================================       
+开始进行消融实验
+============================================================       
+模型配置                 | Loss       | Accuracy   | 贡献度       
+------------------------------------------------------------       
+Full Model           | 0.2122     | 92.25     % | (Baseline)       
+Image Only           | 0.1886     | 93.31     % | (+1.06%)
+Time Series Only     | 1.7498     | 40.00     % | (-52.25%)        
+------------------------------------------------------------       
+ℹ 结论: 多模态融合带来了提升，但其中一个模态起主导作用。
+============================================================       
+
+[步骤6] 保存模型...
+  ✓ 模型已保存: new_simulator_trained_model.pth
+
+======================================================================
+✓ 训练完成！
+======================================================================

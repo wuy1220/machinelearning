@@ -62,32 +62,43 @@ class H5LazyDataset(Dataset):
         fpath = meta['path']
         w_idx = meta['window_idx']
         
-        # 读取标签和图像 (保持不变)
         with h5py.File(fpath, 'r') as hf:
             label = meta['label']
             image = hf['feature_maps'][w_idx] 
             
-            # === 关键修改：读取原始加速度信号 ===
-            # 根据 window_idx 和 step_size 计算切片范围
+            # === 修改：读取原始信号并计算 FFT ===
             start_idx = w_idx * meta['step_size']
             end_idx = start_idx + self.window_length
-            
-            # 读取所有传感器的数据，或者只读取平均后的？
-            # 这里我们读取所有传感器，后续在模型里或在这里做平均
-            # 形状: (time_steps, num_sensors)
             raw_acc = hf['acceleration'][start_idx:end_idx, :]
             
-            # 边界处理：如果切片不够长，进行填充
+            # 边界处理
             if raw_acc.shape[0] < self.window_length:
                 pad_width = self.window_length - raw_acc.shape[0]
                 raw_acc = np.pad(raw_acc, ((0, pad_width), (0, 0)), mode='constant')
             
-            # 特征选择：我们仍然可以使用所有传感器的平均作为输入
-            # 形状变为:
-            time_series = np.mean(raw_acc, axis=1) 
+            # 1. 对所有传感器求平均 (1D 信号)
+            time_series = np.mean(raw_acc, axis=1)
+            
+            # 2. 加 Hanning 窗 (减少频谱泄漏)
+            window = np.hanning(len(time_series))
+            time_series_windowed = time_series * window
+            
+            # 3. 计算 FFT (取绝对值，取一半)
+            fft_vals = np.fft.rfft(time_series_windowed)
+            fft_abs = np.abs(fft_vals)
+            
+            # 4. 截取低频部分 (通常结构损伤主要影响低频模态)
+            # 假设 2000 点的信号，FFT 后一半是 1000 点。我们取前 200 个低频点
+            time_series = fft_abs[:200] 
+            
+            # 5. Log 变换 (压缩动态范围，利于训练)
+            time_series = np.log1p(time_series) # log(1+x) 避免 log(0)
+            
+            # 6. 归一化
             ts_mean = np.mean(time_series)
             ts_std = np.std(time_series) + 1e-8
             time_series = (time_series - ts_mean) / ts_std
+            
             
         # 图像维度处理
         image = image.transpose(2, 0, 1).astype(np.float32)
