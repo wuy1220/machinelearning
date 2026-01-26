@@ -240,7 +240,7 @@ def main_with_new_simulator():
     # ==================== 参数配置 ====================
     DATA_DIR = './jacket_damage_data_timespace'
     NUM_CLASSES = 2  # 0=健康, 1=损伤
-    BATCH_SIZE = 32
+    BATCH_SIZE = 32  # 采用 lamb 优化器时，batch_size 应当设置大一点
     EPOCHS = 50
     LEARNING_RATE = 0.001
     EARLY_STOPPING_PATIENCE = 5
