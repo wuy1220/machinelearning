@@ -771,7 +771,7 @@ if __name__ == "__main__":
     generator = ImprovedDamageDataGenerator(
         simulator=simulator,
         gvr_extractor=gvr_extractor,
-        output_dir='./jacket_damage_data_timespace2'
+        output_dir='./jacket_damage_data_timespace'
     )
     
     # 生成数据集
@@ -780,8 +780,8 @@ if __name__ == "__main__":
     generator.generate_comprehensive_dataset(
         num_scenarios=2500,
         healthy_ratio=0.4,
-        min_severity=0.2,  # 测试模型能力，如果跑通再调小
-        max_severity=0.6
+        min_severity=0.1,  # 测试模型能力，如果跑通再调小
+        max_severity=0.5
     )
     
     print("\n" + "=" * 60)

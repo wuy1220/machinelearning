@@ -590,7 +590,7 @@ class OffshoreDamageDetectionSystem:
                 base_params.append(param)
 
         # 调节差异学习率
-        base_lr = learning_rate * 0.6
+        base_lr = learning_rate * 0.5
         classifier_lr = learning_rate * 1
         finetune_lr = learning_rate * 1
 

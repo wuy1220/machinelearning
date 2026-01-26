@@ -238,7 +238,7 @@ def main_with_new_simulator():
     print("=" * 70)
     
     # ==================== 参数配置 ====================
-    DATA_DIR = './jacket_damage_data_timespace2'
+    DATA_DIR = './jacket_damage_data_timespace'
     NUM_CLASSES = 2  
     BATCH_SIZE = 32  # 采用 lamb 优化器时，batch_size 应当设置较大的值, 但大 batch 会导致泛化能力下降
     EPOCHS = 30

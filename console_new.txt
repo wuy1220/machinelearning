@@ -1,0 +1,153 @@
+[步骤5] 训练模型...
+  训练轮数: 30
+  学习率: 0.001
+  早停耐心值: 8
+Processing Batch 20/188 - Loss: 0.6528
+Processing Batch 40/188 - Loss: 0.6741
+Processing Batch 60/188 - Loss: 0.6594
+Processing Batch 80/188 - Loss: 0.5382
+Processing Batch 100/188 - Loss: 0.5412
+Processing Batch 120/188 - Loss: 0.5859
+Processing Batch 140/188 - Loss: 0.4644
+Processing Batch 160/188 - Loss: 0.4178
+Processing Batch 180/188 - Loss: 0.4600
+Epoch [1/30], Train Loss: 0.5620, Acc: 70.70%, Val Loss: 0.6450, Acc: 69.00%
+Processing Batch 20/188 - Loss: 0.4028
+Processing Batch 40/188 - Loss: 0.4271
+Processing Batch 60/188 - Loss: 0.3495
+Processing Batch 80/188 - Loss: 0.3926
+Processing Batch 100/188 - Loss: 0.3975
+Processing Batch 120/188 - Loss: 0.3361
+Processing Batch 140/188 - Loss: 0.3409
+Processing Batch 160/188 - Loss: 0.4392
+Processing Batch 180/188 - Loss: 0.3017
+Epoch [2/30], Train Loss: 0.4083, Acc: 84.15%, Val Loss: 1.0160, Acc: 60.65%
+Processing Batch 20/188 - Loss: 0.4221
+Processing Batch 40/188 - Loss: 0.3161
+Processing Batch 60/188 - Loss: 0.5190
+Processing Batch 80/188 - Loss: 0.2824
+Processing Batch 100/188 - Loss: 0.5281
+Processing Batch 120/188 - Loss: 0.2512
+Processing Batch 140/188 - Loss: 0.5567
+Processing Batch 160/188 - Loss: 0.3346
+Processing Batch 180/188 - Loss: 0.3238
+Epoch [3/30], Train Loss: 0.3718, Acc: 86.40%, Val Loss: 0.5374, Acc: 74.50%
+Processing Batch 20/188 - Loss: 0.2167
+Processing Batch 40/188 - Loss: 0.3521
+Processing Batch 60/188 - Loss: 0.1983
+Processing Batch 80/188 - Loss: 0.3056
+Processing Batch 100/188 - Loss: 0.3922
+Processing Batch 120/188 - Loss: 0.4851
+Processing Batch 140/188 - Loss: 0.2256
+Processing Batch 160/188 - Loss: 0.3520
+Processing Batch 180/188 - Loss: 0.2509
+Epoch [4/30], Train Loss: 0.3120, Acc: 90.57%, Val Loss: 0.3796, Acc: 85.40%
+Processing Batch 20/188 - Loss: 0.3245
+Processing Batch 40/188 - Loss: 0.2587
+Processing Batch 60/188 - Loss: 0.2011
+Processing Batch 80/188 - Loss: 0.2977
+Processing Batch 100/188 - Loss: 0.1706
+Processing Batch 120/188 - Loss: 0.2556
+Processing Batch 140/188 - Loss: 0.1729
+Processing Batch 160/188 - Loss: 0.2887
+Processing Batch 180/188 - Loss: 0.1935
+Epoch [5/30], Train Loss: 0.2787, Acc: 92.62%, Val Loss: 0.4078, Acc: 84.55%
+Processing Batch 20/188 - Loss: 0.2975
+Processing Batch 40/188 - Loss: 0.3596
+Processing Batch 60/188 - Loss: 0.1583
+Processing Batch 80/188 - Loss: 0.1897
+Processing Batch 100/188 - Loss: 0.2474
+Processing Batch 120/188 - Loss: 0.1647
+Processing Batch 140/188 - Loss: 0.1764
+Processing Batch 160/188 - Loss: 0.1686
+Processing Batch 180/188 - Loss: 0.2453
+Epoch [6/30], Train Loss: 0.2351, Acc: 94.62%, Val Loss: 0.5357, Acc: 77.40%
+Processing Batch 20/188 - Loss: 0.2984
+Processing Batch 40/188 - Loss: 0.1905
+Processing Batch 60/188 - Loss: 0.2040
+Processing Batch 80/188 - Loss: 0.3183
+Processing Batch 100/188 - Loss: 0.1610
+Processing Batch 120/188 - Loss: 0.1714
+Processing Batch 140/188 - Loss: 0.1515
+Processing Batch 160/188 - Loss: 0.1630
+Processing Batch 180/188 - Loss: 0.1915
+Epoch [7/30], Train Loss: 0.2155, Acc: 95.85%, Val Loss: 0.6012, Acc: 77.70%
+Processing Batch 20/188 - Loss: 0.1723
+Processing Batch 40/188 - Loss: 0.1738
+Processing Batch 60/188 - Loss: 0.5413
+Processing Batch 80/188 - Loss: 0.2009
+Processing Batch 100/188 - Loss: 0.1796
+Processing Batch 120/188 - Loss: 0.1390
+Processing Batch 140/188 - Loss: 0.1786
+Processing Batch 160/188 - Loss: 0.2260
+Processing Batch 180/188 - Loss: 0.1735
+Epoch [8/30], Train Loss: 0.1927, Acc: 96.90%, Val Loss: 1.1581, Acc: 62.45%
+Processing Batch 20/188 - Loss: 0.3136
+Processing Batch 40/188 - Loss: 0.1481
+Processing Batch 60/188 - Loss: 0.1866
+Processing Batch 80/188 - Loss: 0.1521
+Processing Batch 100/188 - Loss: 0.1833
+Processing Batch 120/188 - Loss: 0.1948
+Processing Batch 140/188 - Loss: 0.1704
+Processing Batch 160/188 - Loss: 0.1930
+Processing Batch 180/188 - Loss: 0.1598
+Epoch [9/30], Train Loss: 0.1879, Acc: 97.33%, Val Loss: 0.7009, Acc: 77.55%
+Processing Batch 20/188 - Loss: 0.1551
+Processing Batch 40/188 - Loss: 0.2395
+Processing Batch 60/188 - Loss: 0.1509
+Processing Batch 80/188 - Loss: 0.1423
+Processing Batch 100/188 - Loss: 0.1484
+Processing Batch 120/188 - Loss: 0.2134
+Processing Batch 140/188 - Loss: 0.1845
+Processing Batch 160/188 - Loss: 0.2660
+Processing Batch 180/188 - Loss: 0.1778
+Epoch [10/30], Train Loss: 0.1769, Acc: 97.77%, Val Loss: 0.4060, Acc: 85.95%
+Processing Batch 20/188 - Loss: 0.1475
+Processing Batch 40/188 - Loss: 0.1384
+Processing Batch 60/188 - Loss: 0.1471
+Processing Batch 80/188 - Loss: 0.1485
+Processing Batch 100/188 - Loss: 0.1335
+Processing Batch 120/188 - Loss: 0.1274
+Processing Batch 140/188 - Loss: 0.1340
+Processing Batch 160/188 - Loss: 0.1342
+Processing Batch 180/188 - Loss: 0.2301
+Epoch [11/30], Train Loss: 0.1587, Acc: 98.65%, Val Loss: 0.4289, Acc: 85.55%
+Processing Batch 20/188 - Loss: 0.1704
+Processing Batch 40/188 - Loss: 0.1612
+Processing Batch 60/188 - Loss: 0.1278
+Processing Batch 80/188 - Loss: 0.1860
+Processing Batch 100/188 - Loss: 0.1382
+Processing Batch 120/188 - Loss: 0.2034
+Processing Batch 140/188 - Loss: 0.1361
+Processing Batch 160/188 - Loss: 0.1353
+Processing Batch 180/188 - Loss: 0.1324
+Early stopping at epoch 12
+
+[步骤5] 评估模型性能...
+
+==================================================
+测试集性能:
+==================================================
+准确率:   0.8505
+精确率:   0.8441
+召回率:   0.8552
+F1分数:   0.8472
+
+============================================================
+开始进行消融实验
+============================================================
+模型配置                 | Loss       | Accuracy   | 贡献度       
+------------------------------------------------------------
+Full Model           | 0.3844     | 85.05     % | (Baseline)
+Image Only           | 5.0085     | 41.85     % | (-43.20%)
+Time Series Only     | 0.6637     | 74.70     % | (-10.35%)
+------------------------------------------------------------
+✓ 结论: 模型有效融合了两个模态的信息，融合效果优于单模态。
+============================================================
+
+[步骤6] 保存模型...
+  ✓ 模型已保存: new_simulator_trained_model.pth
+
+======================================================================
+✓ 训练完成！
+======================================================================
