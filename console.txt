@@ -1,186 +1,86 @@
 [步骤5] 训练模型...
-  训练轮数: 50
+  训练轮数: 25
   学习率: 0.001
   早停耐心值: 5
-Processing Batch 20/150 - Loss: 0.4328
-Processing Batch 40/150 - Loss: 0.3855
-Processing Batch 60/150 - Loss: 0.3377
-Processing Batch 80/150 - Loss: 0.2987
-Processing Batch 100/150 - Loss: 0.2095
-Processing Batch 120/150 - Loss: 0.2407
-Processing Batch 140/150 - Loss: 0.3435
-Epoch [1/50], Train Loss: 0.3918, Acc: 86.35%, Val Loss: 0.9752, Acc: 62.06%
-Processing Batch 20/150 - Loss: 0.2646
-Processing Batch 40/150 - Loss: 0.2427
-Processing Batch 60/150 - Loss: 0.2235
-Processing Batch 80/150 - Loss: 0.1850
-Processing Batch 100/150 - Loss: 0.3112
-Processing Batch 120/150 - Loss: 0.2168
-Processing Batch 140/150 - Loss: 0.3233
-Epoch [2/50], Train Loss: 0.2435, Acc: 96.38%, Val Loss: 0.4745, Acc: 82.06%
-Processing Batch 20/150 - Loss: 0.1875
-Processing Batch 40/150 - Loss: 0.2160
-Processing Batch 60/150 - Loss: 0.2571
-Processing Batch 80/150 - Loss: 0.1968
-Processing Batch 100/150 - Loss: 0.2466
-Processing Batch 120/150 - Loss: 0.2029
-Processing Batch 140/150 - Loss: 0.2218
-Epoch [3/50], Train Loss: 0.2231, Acc: 97.38%, Val Loss: 0.4119, Acc: 83.69%
-Processing Batch 20/150 - Loss: 0.3290
-Processing Batch 40/150 - Loss: 0.1988
-Processing Batch 60/150 - Loss: 0.1761
-Processing Batch 80/150 - Loss: 0.1900
-Processing Batch 100/150 - Loss: 0.1790
-Processing Batch 120/150 - Loss: 0.1726
-Processing Batch 140/150 - Loss: 0.2020
-Epoch [4/50], Train Loss: 0.2097, Acc: 98.12%, Val Loss: 0.6047, Acc: 74.75%
-Processing Batch 20/150 - Loss: 0.1760
-Processing Batch 40/150 - Loss: 0.1866
-Processing Batch 60/150 - Loss: 0.1927
-Processing Batch 80/150 - Loss: 0.1762
-Processing Batch 100/150 - Loss: 0.1954
-Processing Batch 120/150 - Loss: 0.1881
-Processing Batch 140/150 - Loss: 0.1911
-Epoch [5/50], Train Loss: 0.1968, Acc: 98.60%, Val Loss: 0.3840, Acc: 87.00%
-Processing Batch 20/150 - Loss: 0.2064
-Processing Batch 40/150 - Loss: 0.1953
-Processing Batch 60/150 - Loss: 0.1813
-Processing Batch 80/150 - Loss: 0.1916
-Processing Batch 100/150 - Loss: 0.1778
-Processing Batch 120/150 - Loss: 0.1753
-Processing Batch 140/150 - Loss: 0.1752
-Epoch [6/50], Train Loss: 0.1959, Acc: 98.79%, Val Loss: 0.3066, Acc: 91.06%
-Processing Batch 20/150 - Loss: 0.1789
-Processing Batch 40/150 - Loss: 0.1808
-Processing Batch 60/150 - Loss: 0.1780
-Processing Batch 80/150 - Loss: 0.2183
-Processing Batch 100/150 - Loss: 0.1698
-Processing Batch 120/150 - Loss: 0.2074
-Processing Batch 140/150 - Loss: 0.1821
-Epoch [7/50], Train Loss: 0.1955, Acc: 98.90%, Val Loss: 0.2650, Acc: 95.12%
-Processing Batch 20/150 - Loss: 0.2159
-Processing Batch 40/150 - Loss: 0.1747
-Processing Batch 60/150 - Loss: 0.1719
-Processing Batch 80/150 - Loss: 0.1827
-Processing Batch 100/150 - Loss: 0.1761
-Processing Batch 120/150 - Loss: 0.2177
-Processing Batch 140/150 - Loss: 0.1793
-Epoch [8/50], Train Loss: 0.1864, Acc: 99.15%, Val Loss: 0.3757, Acc: 84.12%
-Processing Batch 20/150 - Loss: 0.1883
-Processing Batch 40/150 - Loss: 0.1799
-Processing Batch 60/150 - Loss: 0.1766
-Processing Batch 80/150 - Loss: 0.2002
-Processing Batch 100/150 - Loss: 0.1775
-Processing Batch 120/150 - Loss: 0.1715
-Processing Batch 140/150 - Loss: 0.1723
-Epoch [9/50], Train Loss: 0.1938, Acc: 98.85%, Val Loss: 0.2685, Acc: 94.81%
-Processing Batch 20/150 - Loss: 0.1838
-Processing Batch 40/150 - Loss: 0.1729
-Processing Batch 60/150 - Loss: 0.2322
-Processing Batch 80/150 - Loss: 0.1748
-Processing Batch 100/150 - Loss: 0.1780
-Processing Batch 120/150 - Loss: 0.2231
-Processing Batch 140/150 - Loss: 0.1731
-Epoch [10/50], Train Loss: 0.1919, Acc: 98.98%, Val Loss: 0.2504, Acc: 95.88%
-Processing Batch 20/150 - Loss: 0.1733
-Processing Batch 40/150 - Loss: 0.1793
-Processing Batch 60/150 - Loss: 0.1788
-Processing Batch 80/150 - Loss: 0.1720
-Processing Batch 100/150 - Loss: 0.1726
-Processing Batch 120/150 - Loss: 0.1762
-Processing Batch 140/150 - Loss: 0.1708
-Epoch [11/50], Train Loss: 0.1825, Acc: 99.44%, Val Loss: 0.2577, Acc: 96.06%
-Processing Batch 20/150 - Loss: 0.1914
-Processing Batch 40/150 - Loss: 0.2615
-Processing Batch 60/150 - Loss: 0.1716
-Processing Batch 80/150 - Loss: 0.2044
-Processing Batch 100/150 - Loss: 0.1746
-Processing Batch 120/150 - Loss: 0.1841
-Processing Batch 140/150 - Loss: 0.1732
-Epoch [12/50], Train Loss: 0.1905, Acc: 98.96%, Val Loss: 0.2679, Acc: 94.56%
-Processing Batch 20/150 - Loss: 0.1701
-Processing Batch 40/150 - Loss: 0.1726
-Processing Batch 60/150 - Loss: 0.1696
-Processing Batch 80/150 - Loss: 0.1696
-Processing Batch 100/150 - Loss: 0.1701
-Processing Batch 120/150 - Loss: 0.1723
-Processing Batch 140/150 - Loss: 0.1726
-Epoch [13/50], Train Loss: 0.1783, Acc: 99.58%, Val Loss: 0.2408, Acc: 96.62%
-Processing Batch 20/150 - Loss: 0.1797
-Processing Batch 40/150 - Loss: 0.1849
-Processing Batch 60/150 - Loss: 0.1703
-Processing Batch 80/150 - Loss: 0.1729
-Processing Batch 100/150 - Loss: 0.1697
-Processing Batch 120/150 - Loss: 0.1700
-Processing Batch 140/150 - Loss: 0.1720
-Epoch [14/50], Train Loss: 0.1926, Acc: 98.77%, Val Loss: 0.2698, Acc: 94.56%
-Processing Batch 20/150 - Loss: 0.1708
-Processing Batch 40/150 - Loss: 0.1723
-Processing Batch 60/150 - Loss: 0.1690
-Processing Batch 80/150 - Loss: 0.1705
-Processing Batch 100/150 - Loss: 0.1709
-Processing Batch 120/150 - Loss: 0.1710
-Processing Batch 140/150 - Loss: 0.1718
-Epoch [15/50], Train Loss: 0.1799, Acc: 99.44%, Val Loss: 0.2105, Acc: 98.00%
-Processing Batch 20/150 - Loss: 0.1690
-Processing Batch 40/150 - Loss: 0.1696
-Processing Batch 60/150 - Loss: 0.1759
-Processing Batch 80/150 - Loss: 0.1699
-Processing Batch 100/150 - Loss: 0.1703
-Processing Batch 120/150 - Loss: 0.2264
-Processing Batch 140/150 - Loss: 0.1736
-Epoch [16/50], Train Loss: 0.1739, Acc: 99.81%, Val Loss: 0.2935, Acc: 91.94%
-Processing Batch 20/150 - Loss: 0.1814
-Processing Batch 40/150 - Loss: 0.1715
-Processing Batch 60/150 - Loss: 0.1709
-Processing Batch 80/150 - Loss: 0.2415
-Processing Batch 100/150 - Loss: 0.2193
-Processing Batch 120/150 - Loss: 0.1723
-Processing Batch 140/150 - Loss: 0.1710
-Epoch [17/50], Train Loss: 0.1861, Acc: 99.29%, Val Loss: 0.2185, Acc: 97.56%
-Processing Batch 20/150 - Loss: 0.1809
-Processing Batch 40/150 - Loss: 0.1760
-Processing Batch 60/150 - Loss: 0.1702
-Processing Batch 80/150 - Loss: 0.1765
-Processing Batch 100/150 - Loss: 0.1704
-Processing Batch 120/150 - Loss: 0.1703
-Processing Batch 140/150 - Loss: 0.1711
-Epoch [18/50], Train Loss: 0.1821, Acc: 99.35%, Val Loss: 0.2398, Acc: 96.31%
-Processing Batch 20/150 - Loss: 0.2674
-Processing Batch 40/150 - Loss: 0.1719
-Processing Batch 60/150 - Loss: 0.1812
-Processing Batch 80/150 - Loss: 0.1699
-Processing Batch 100/150 - Loss: 0.1705
-Processing Batch 120/150 - Loss: 0.1887
-Processing Batch 140/150 - Loss: 0.1718
-Epoch [19/50], Train Loss: 0.1876, Acc: 99.08%, Val Loss: 0.2358, Acc: 97.00%
-Processing Batch 20/150 - Loss: 0.1731
-Processing Batch 40/150 - Loss: 0.1701
-Processing Batch 60/150 - Loss: 0.2157
-Processing Batch 80/150 - Loss: 0.1703
-Processing Batch 100/150 - Loss: 0.1704
-Processing Batch 120/150 - Loss: 0.1715
-Processing Batch 140/150 - Loss: 0.1786
-Early stopping at epoch 20
+Processing Batch 20/188 - Loss: 0.6584
+Processing Batch 40/188 - Loss: 0.6065
+Processing Batch 60/188 - Loss: 0.5192
+Processing Batch 80/188 - Loss: 0.4183
+Processing Batch 100/188 - Loss: 0.6234
+Processing Batch 120/188 - Loss: 0.4263
+Processing Batch 140/188 - Loss: 0.3139
+Processing Batch 160/188 - Loss: 0.3001
+Processing Batch 180/188 - Loss: 0.4088
+Epoch [1/25], Train Loss: 0.4725, Acc: 77.13%, Val Loss: 0.3154, Acc: 90.35%
+Processing Batch 20/188 - Loss: 0.3862
+Processing Batch 40/188 - Loss: 0.2562
+Processing Batch 60/188 - Loss: 0.2526
+Processing Batch 80/188 - Loss: 0.3247
+Processing Batch 100/188 - Loss: 0.3511
+Processing Batch 120/188 - Loss: 0.2871
+Processing Batch 140/188 - Loss: 0.3626
+Processing Batch 160/188 - Loss: 0.2335
+Processing Batch 180/188 - Loss: 0.2266
+Epoch [2/25], Train Loss: 0.3114, Acc: 90.92%, Val Loss: 0.3240, Acc: 89.00%
+Processing Batch 20/188 - Loss: 0.2844
+Processing Batch 40/188 - Loss: 0.2904
+Processing Batch 60/188 - Loss: 0.1602
+Processing Batch 80/188 - Loss: 0.1924
+Processing Batch 100/188 - Loss: 0.2336
+Processing Batch 120/188 - Loss: 0.2839
+Processing Batch 140/188 - Loss: 0.4054
+Processing Batch 160/188 - Loss: 0.1760
+Processing Batch 180/188 - Loss: 0.2339
+Epoch [3/25], Train Loss: 0.2437, Acc: 94.72%, Val Loss: 0.6207, Acc: 74.00%
+Processing Batch 20/188 - Loss: 0.1996
+Processing Batch 40/188 - Loss: 0.3341
+Processing Batch 60/188 - Loss: 0.2447
+Processing Batch 80/188 - Loss: 0.1907
+Processing Batch 100/188 - Loss: 0.2461
+Processing Batch 120/188 - Loss: 0.1827
+Processing Batch 140/188 - Loss: 0.1801
+Processing Batch 160/188 - Loss: 0.2143
+Processing Batch 180/188 - Loss: 0.1401
+Epoch [4/25], Train Loss: 0.2169, Acc: 95.98%, Val Loss: 0.4647, Acc: 82.10%
+Processing Batch 20/188 - Loss: 0.1687
+Processing Batch 40/188 - Loss: 0.1950
+Processing Batch 60/188 - Loss: 0.1945
+Processing Batch 80/188 - Loss: 0.1659
+Processing Batch 100/188 - Loss: 0.1741
+Processing Batch 120/188 - Loss: 0.1458
+Processing Batch 140/188 - Loss: 0.1529
+Processing Batch 160/188 - Loss: 0.2235
+Processing Batch 180/188 - Loss: 0.1443
+Epoch [5/25], Train Loss: 0.1810, Acc: 97.80%, Val Loss: 0.5698, Acc: 82.80%
+Processing Batch 20/188 - Loss: 0.2439
+Processing Batch 40/188 - Loss: 0.1740
+Processing Batch 60/188 - Loss: 0.1356
+Processing Batch 80/188 - Loss: 0.2208
+Processing Batch 100/188 - Loss: 0.1414
+Processing Batch 120/188 - Loss: 0.1404
+Processing Batch 140/188 - Loss: 0.1628
+Processing Batch 160/188 - Loss: 0.1567
+Processing Batch 180/188 - Loss: 0.1731
+Early stopping at epoch 6
 
 [步骤5] 评估模型性能...
 
 ==================================================
 测试集性能:
 ==================================================
-准确率:   0.8562
-精确率:   0.8978
-召回率:   0.8219
-F1分数:   0.8379
+准确率:   0.8555
+精确率:   0.8627
+召回率:   0.8354
+F1分数:   0.8444
 
 ============================================================
 开始进行消融实验
 ============================================================
 模型配置                 | Loss       | Accuracy   | 贡献度       
 ------------------------------------------------------------
-Full Model           | 0.3694     | 85.00     % | (Baseline)
-Image Only           | 0.4217     | 83.25     % | (-1.75%)
-Time Series Only     | 2.0444     | 40.00     % | (-45.00%)
+Full Model           | 0.3554     | 85.55     % | (Baseline)
+Image Only           | 1.4383     | 65.50     % | (-20.05%)
+Time Series Only     | 0.3494     | 83.65     % | (-1.90%)
 ------------------------------------------------------------
 ✓ 结论: 模型有效融合了两个模态的信息，融合效果优于单模态。
 ============================================================

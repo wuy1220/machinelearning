@@ -335,9 +335,13 @@ class OffshoreDamageDetectionSystem:
         self.scaler = MinMaxScaler()
         
         # 定义图像变换, gvr的图像变换不能使用 flip 和 rotate
-        self.gvr_transform = transforms.Compose([
+        self.train_transform = transforms.Compose([
             # 由于通道是物理特征，这里的 jitter 参数建议设置小一点
             transforms.ColorJitter(brightness=0.2, contrast=0.15, saturation=0.1, hue=0),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+
+        self.valid_transform = transforms.Compose([
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ])
 
@@ -489,15 +493,15 @@ class OffshoreDamageDetectionSystem:
         # 创建数据集
         train_dataset = OffshoreStructureDataset(
             X_train, img_train, y_train,
-            transform=self.gvr_transform
+            transform=self.train_transform
         )
         val_dataset = OffshoreStructureDataset(
             X_val, img_val, y_val,
-            transform=self.gvr_transform
+            transform=self.valid_transform
         )
         test_dataset = OffshoreStructureDataset(
             X_test, img_test, y_test,
-            transform=self.gvr_transform
+            transform=self.valid_transform
         )
         
         # 创建数据加载器
@@ -568,25 +572,33 @@ class OffshoreDamageDetectionSystem:
         返回:
             history: 训练历史 {loss, accuracy, val_loss, val_accuracy}
         """
-        criterion = nn.CrossEntropyLoss(label_smoothing=0.06) # 用较低的标签平滑，防止过拟合
+        criterion = nn.CrossEntropyLoss(label_smoothing=0.05) # 用较低的标签平滑，防止过拟合
         #optimizer = optim.Adam(self.model.parameters(), lr=learning_rate, weight_decay=1e-4)
 
         # 1. 定义参数组
-        base_params = []      # 从头训练的参数 (1D-CNN, Gate, Classifier)
+        base_params = []      # 从头训练的参数 (1D-CNN, Gate)
+        classifier_params = []  # 分类器参数
         finetune_params = []  # 需要微调的参数
 
         for name, param in self.model.named_parameters():
             # 注意：根据你的代码，MobileNetV3 存储在 self.resnet 和 self.resnet_fc 中
-            # 我们对 resnet 和 resnet_fc 使用较小的学习率
             if 'resnet' in name:
                 finetune_params.append(param)
+            elif 'classifier' in name:
+                classifier_params.append(param)
             else:
                 base_params.append(param)
 
+        # 调节差异学习率
+        base_lr = learning_rate * 0.6
+        classifier_lr = learning_rate * 1
+        finetune_lr = learning_rate * 1
+
         # 2. 设置差异学习率
         optimizer = optim.Adam([
-            {'params': base_params, 'lr': learning_rate},
-            {'params': finetune_params, 'lr': learning_rate * 0.2} 
+            {'params': base_params, 'lr': base_lr},
+            {'params': classifier_params, 'lr': classifier_lr},
+            {'params': finetune_params, 'lr': finetune_lr} 
         ], weight_decay=1e-4)
 
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
