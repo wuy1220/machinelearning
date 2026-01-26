@@ -568,17 +568,26 @@ class OffshoreDamageDetectionSystem:
         返回:
             history: 训练历史 {loss, accuracy, val_loss, val_accuracy}
         """
-        criterion = nn.CrossEntropyLoss(label_smoothing=0.07) # 用较低的标签平滑，防止过拟合
+        criterion = nn.CrossEntropyLoss(label_smoothing=0.06) # 用较低的标签平滑，防止过拟合
         #optimizer = optim.Adam(self.model.parameters(), lr=learning_rate, weight_decay=1e-4)
 
-        # 2. lamb优化
-        optimizer = Lamb(
-            self.model.parameters(), 
-            lr=learning_rate,  # 全局统一学习率
-            weight_decay=1e-4,
-            betas=(0.9, 0.999),
-            adam=False  # LAMB 模式
-        )
+        # 1. 定义参数组
+        base_params = []      # 从头训练的参数 (1D-CNN, Gate, Classifier)
+        finetune_params = []  # 需要微调的参数
+
+        for name, param in self.model.named_parameters():
+            # 注意：根据你的代码，MobileNetV3 存储在 self.resnet 和 self.resnet_fc 中
+            # 我们对 resnet 和 resnet_fc 使用较小的学习率
+            if 'resnet' in name:
+                finetune_params.append(param)
+            else:
+                base_params.append(param)
+
+        # 2. 设置差异学习率
+        optimizer = optim.Adam([
+            {'params': base_params, 'lr': learning_rate},
+            {'params': finetune_params, 'lr': learning_rate * 0.2} 
+        ], weight_decay=1e-4)
 
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode='min', factor=0.5, patience=5

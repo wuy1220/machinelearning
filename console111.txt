@@ -1,0 +1,76 @@
+[步骤5] 训练模型...
+  训练轮数: 50
+  学习率: 0.001
+  早停耐心值: 5
+Processing Batch 5/38 - Loss: 0.7210
+Processing Batch 10/38 - Loss: 0.7003
+Processing Batch 15/38 - Loss: 0.6845
+Processing Batch 20/38 - Loss: 0.6871
+Processing Batch 25/38 - Loss: 0.6706
+Processing Batch 30/38 - Loss: 0.6460
+Processing Batch 35/38 - Loss: 0.6406
+Epoch [1/50], Train Loss: 0.6761, Acc: 55.40%, Val Loss: 0.6368, Acc: 71.00%
+Processing Batch 5/38 - Loss: 0.6184
+Processing Batch 10/38 - Loss: 0.5835
+Processing Batch 15/38 - Loss: 0.5523
+Processing Batch 20/38 - Loss: 0.5456
+Processing Batch 25/38 - Loss: 0.5310
+Processing Batch 30/38 - Loss: 0.5317
+Processing Batch 35/38 - Loss: 0.5006
+Epoch [2/50], Train Loss: 0.5616, Acc: 79.08%, Val Loss: 0.6114, Acc: 67.75%
+Processing Batch 5/38 - Loss: 0.4948
+Processing Batch 10/38 - Loss: 0.4750
+Processing Batch 15/38 - Loss: 0.4623
+Processing Batch 20/38 - Loss: 0.4686
+Processing Batch 25/38 - Loss: 0.4476
+Processing Batch 30/38 - Loss: 0.5347
+Processing Batch 35/38 - Loss: 0.4384
+Epoch [3/50], Train Loss: 0.4673, Acc: 89.33%, Val Loss: 0.6063, Acc: 65.19%
+Processing Batch 5/38 - Loss: 0.4305
+Processing Batch 10/38 - Loss: 0.4154
+Processing Batch 15/38 - Loss: 0.3975
+Processing Batch 20/38 - Loss: 0.3778
+Processing Batch 25/38 - Loss: 0.3790
+Processing Batch 30/38 - Loss: 0.4026
+Processing Batch 35/38 - Loss: 0.3587
+Epoch [4/50], Train Loss: 0.3941, Acc: 93.77%, Val Loss: 0.4707, Acc: 80.69%
+Processing Batch 5/38 - Loss: 0.3529
+Processing Batch 10/38 - Loss: 0.3146
+Processing Batch 15/38 - Loss: 0.4011
+Processing Batch 20/38 - Loss: 0.3384
+Processing Batch 25/38 - Loss: 0.3205
+Processing Batch 30/38 - Loss: 0.3017
+Processing Batch 35/38 - Loss: 0.3300
+Epoch [5/50], Train Loss: 0.3339, Acc: 96.00%, Val Loss: 0.3976, Acc: 88.31%
+Processing Batch 5/38 - Loss: 0.2757
+Processing Batch 10/38 - Loss: 0.2906
+Processing Batch 15/38 - Loss: 0.2885
+Processing Batch 20/38 - Loss: 0.2780
+Processing Batch 25/38 - Loss: 0.3095
+Processing Batch 30/38 - Loss: 0.2936
+Processing Batch 35/38 - Loss: 0.2481
+Epoch [6/50], Train Loss: 0.2778, Acc: 98.25%, Val Loss: 0.3278, Acc: 90.69%
+Processing Batch 5/38 - Loss: 0.2533
+Processing Batch 10/38 - Loss: 0.2802
+Processing Batch 15/38 - Loss: 0.2727
+Processing Batch 20/38 - Loss: 0.2656
+Processing Batch 25/38 - Loss: 0.2396
+Processing Batch 30/38 - Loss: 0.2747
+Processing Batch 35/38 - Loss: 0.2145
+Epoch [7/50], Train Loss: 0.2402, Acc: 98.23%, Val Loss: 0.3421, Acc: 90.31%
+Processing Batch 5/38 - Loss: 0.2327
+Processing Batch 10/38 - Loss: 0.2134
+Processing Batch 15/38 - Loss: 0.2060
+Processing Batch 20/38 - Loss: 0.2259
+Processing Batch 25/38 - Loss: 0.2134
+Processing Batch 30/38 - Loss: 0.1970
+Processing Batch 35/38 - Loss: 0.2369
+Epoch [8/50], Train Loss: 0.2104, Acc: 98.77%, Val Loss: 0.7758, Acc: 73.44%
+Processing Batch 5/38 - Loss: 0.1883
+Processing Batch 10/38 - Loss: 0.2034
+Processing Batch 15/38 - Loss: 0.1935
+Processing Batch 20/38 - Loss: 0.2466
+Processing Batch 25/38 - Loss: 0.1856
+Processing Batch 30/38 - Loss: 0.2214
+Processing Batch 35/38 - Loss: 0.1889
+Epoch [9/50], Train Loss: 0.2020, Acc: 98.77%, Val Loss: 0.5872, Acc: 77.44%
