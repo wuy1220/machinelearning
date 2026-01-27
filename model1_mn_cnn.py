@@ -682,7 +682,7 @@ class OffshoreDamageDetectionSystem:
                 loss = criterion(outputs, labels)
                 
                 loss.backward()
-
+                '''
                 # === 强制平衡梯度 ===
                 # 1. 收集两个分支的参数
                 ts_params = [p for n, p in self.model.named_parameters() if 'ts_cnn' in n and p.grad is not None]
@@ -710,7 +710,7 @@ class OffshoreDamageDetectionSystem:
                         p.grad.data *= scale_ts
                     for p in img_params:
                         p.grad.data *= scale_img
-
+                '''
                 # === 梯度监控与裁剪 ===
                 # 获取各分支的梯度范数
                 ts_grad_norm = 0.0

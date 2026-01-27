@@ -65,6 +65,51 @@ class H5LazyDataset(Dataset):
     def __len__(self):
         return self.total_samples
 
+    def _extract_statistical_features(self, signal_window):
+        """
+        提取统计特征（修改版，返回归一化后的特征）
+        """
+        features = [
+            np.mean(signal_window),
+            np.std(signal_window),
+            np.max(signal_window),
+            np.min(signal_window),
+            np.percentile(signal_window, 25),
+            np.percentile(signal_window, 75),
+            stats.skew(signal_window),
+            stats.kurtosis(signal_window),
+            np.sqrt(np.mean(signal_window**2)),  # RMS
+            np.ptp(signal_window),  # Peak-to-peak
+            np.sum(np.abs(np.diff(signal_window))) / len(signal_window),  # 振动烈度
+            np.mean(np.abs(signal_window - np.mean(signal_window))),  # 平均绝对偏差
+            np.var(signal_window),  # 方差
+            np.median(np.abs(signal_window - np.median(signal_window))),  # 中位数绝对偏差
+            np.sum(signal_window**2) / len(signal_window),  # 均方值
+            np.sum(np.abs(signal_window)),  # 绝对值和
+        ]
+        return np.array(features)
+
+    def _extract_fft_features(self, signal_windowed, fft_dim=200):
+            """
+            提取FFT特征（归一化后）
+            """
+            # 计算 FFT
+            fft_vals = np.fft.rfft(signal_windowed)
+            fft_abs = np.abs(fft_vals)
+            
+            # 截取低频部分
+            fft_features = fft_abs[:fft_dim]
+            
+            # Log 变换
+            fft_features = np.log1p(fft_features)
+            
+            # 归一化
+            fft_mean = np.mean(fft_features)
+            fft_std = np.std(fft_features) + 1e-8
+            fft_features = (fft_features - fft_mean) / fft_std
+            
+            return fft_features
+
     def __getitem__(self, idx):
         meta = self.sample_metadata[idx]
         fpath = os.path.join(self.data_dir, meta['shard_name'])
@@ -93,20 +138,21 @@ class H5LazyDataset(Dataset):
             window = np.hanning(len(time_series))
             time_series_windowed = time_series * window
             
-            # 3. 计算 FFT
-            fft_vals = np.fft.rfft(time_series_windowed)
-            fft_abs = np.abs(fft_vals)
+            # ==================== 新增：统计特征提取 ====================
+            stats_features = self._extract_statistical_features(time_series)
             
-            # 4. 截取低频部分
-            time_series = fft_abs[:200] 
+            # 归一化统计特征
+            stats_mean = np.mean(stats_features)
+            stats_std = np.std(stats_features) + 1e-8
+            stats_features = (stats_features - stats_mean) / stats_std
             
-            # 5. Log 变换
-            time_series = np.log1p(time_series)
+            # ==================== FFT特征提取 ====================
+            fft_dim = 200  # FFT维度
+            fft_features = self._extract_fft_features(time_series_windowed, fft_dim=fft_dim)
             
-            # 6. 归一化
-            ts_mean = np.mean(time_series)
-            ts_std = np.std(time_series) + 1e-8
-            time_series = (time_series - ts_mean) / ts_std  
+            # ==================== 拼接特征 ====================
+            # 最终特征 = FFT特征(200维) + 统计特征(16维) = 216维
+            time_series = np.concatenate([fft_features, stats_features])  
 
             # === 时间序列数据增强 ===
             if self.is_training:
@@ -134,30 +180,6 @@ class H5LazyDataset(Dataset):
             image_tensor = self.transform(image_tensor)
             
         return time_series_tensor, image_tensor, label_tensor
-
-    def _extract_statistical_features(self, signal_window):
-        """保留原有方法，以防万一用到"""
-        features = [
-            np.mean(signal_window),
-            np.std(signal_window),
-            np.max(signal_window),
-            np.min(signal_window),
-            np.percentile(signal_window, 25),
-            np.percentile(signal_window, 75),
-            stats.skew(signal_window),
-            stats.kurtosis(signal_window),
-            np.sqrt(np.mean(signal_window**2)),
-            np.ptp(signal_window),
-            np.sum(np.abs(np.diff(signal_window))) / len(signal_window),
-            np.mean(np.abs(signal_window - np.mean(signal_window))),
-            np.var(signal_window),
-            np.median(np.abs(signal_window - np.median(signal_window))),
-            np.sum(signal_window**2) / len(signal_window),
-            np.sum(np.abs(signal_window)),
-        ]
-        return np.array(features)
-
-
 
 
 def run_ablation_study(model, test_loader, device, class_names):
