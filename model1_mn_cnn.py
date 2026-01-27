@@ -320,13 +320,12 @@ class MultiModalDamageDetector(nn.Module):
         concatenated_features = self.fusion_bn(concatenated_features)
         # 4. 门控机制
         # 计算门控权重 g
-        gate_weights = self.gate(concatenated_features) 
+        #gate_weights = self.gate(concatenated_features) 
         # 应用权重： element-wise 相乘
-        gated_features = concatenated_features * gate_weights 
-        
+        #gated_features = concatenated_features * gate_weights 
+        gated_features = concatenated_features 
         # 5. 分类
         logits = self.classifier(gated_features)
-        
         
         return logits
 
@@ -700,17 +699,17 @@ class OffshoreDamageDetectionSystem:
                     
                     scale_ts = target_norm / (ts_norm + 1e-8)
                     scale_img = target_norm / (img_norm + 1e-8)
-                    '''
+                    
                     max_ratio = 4.0 
                     if epoch + 1 <= 3 and ts_norm / (img_norm + 1e-8) > max_ratio:
                         # 只有当比例严重失衡时才干预
-                        scale_ts = (0.7 * max_ratio) * img_norm / (ts_norm + 1e-8)
+                        scale_ts = 1.2 * max_ratio * img_norm / (ts_norm + 1e-8)
                         # 限制缩放范围，防止突变 (可选)
                         scale_ts = torch.clamp(scale_ts, 0.1, 10.0)
                         # 4. 应用缩放
                         for p in ts_params:
                             p.grad.data *= scale_ts
-                
+                '''
                 # === 梯度监控与裁剪 ===
                 # 获取各分支的梯度范数
                 ts_grad_norm = 0.0
@@ -726,9 +725,9 @@ class OffshoreDamageDetectionSystem:
                 ts_grad_norm = ts_grad_norm ** 0.5
                 img_grad_norm = img_grad_norm ** 0.5
 
-                # 梯度分层裁剪
+                # == 梯度分层裁剪 ==
                 ts_clip_threshold = 0.8  # 严格限制 1D-CNN，防止梯度爆炸
-                img_clip_threshold = 2.0 # 放宽 MobileNet，防止梯度因全局裁剪而消失
+                img_clip_threshold = 5.0 # 放宽 MobileNet，防止梯度因全局裁剪而消失
                 
                 # 收集参数
                 ts_params = [p for n, p in self.model.named_parameters() if 'ts_cnn' in n and p.grad is not None]
