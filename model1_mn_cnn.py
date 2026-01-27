@@ -18,7 +18,25 @@ from typing import Tuple, List, Dict
 from sklearn.model_selection import train_test_split
 from pytorch_lamb import Lamb
 import warnings
+import random
 warnings.filterwarnings('ignore')
+
+
+class SmallRandomTranslation(object):
+    """
+    对 X 轴（传感器空间轴）做轻微随机平移，模拟传感器位置扰动
+    Y 轴保持不变，避免破坏时间顺序
+    """
+    def __init__(self, max_dx=3):
+        self.max_dx = max_dx  # 像素
+
+    def __call__(self, img):
+        # img: (C, H, W) Tensor
+        dx = random.randint(-self.max_dx, self.max_dx)
+        if dx == 0:
+            return img
+        # 沿 W 维度滚动，实现平移
+        return torch.roll(img, shifts=dx, dims=-1)
 
 
 # ============================================================================
@@ -218,6 +236,7 @@ class MultiModalDamageDetector(nn.Module):
             nn.Conv1d(64, 32, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm1d(32),
             nn.ReLU(),
+            nn.Dropout(0.2),
             
             # 自适应池化层：无论输入长度如何，强制输出形状为 (Batch, 32, 1)
             nn.AdaptiveAvgPool1d(1),
@@ -258,6 +277,7 @@ class MultiModalDamageDetector(nn.Module):
           
         # ==================== 特征融合与分类层 ====================
         fused_dim = self.ts_output_dim + self.img_output_dim
+        self.fusion_bn = nn.BatchNorm1d(fused_dim)
 
         # 门控网络：学习一个 [0, 1] 之间的权重向量
         self.gate = nn.Sequential(
@@ -268,6 +288,7 @@ class MultiModalDamageDetector(nn.Module):
 
         self.classifier = nn.Sequential(  # 参考论文使用小的全连接层
             nn.Linear(fused_dim, 16),
+            nn.BatchNorm1d(16),
             nn.ReLU(),
             nn.Dropout(0.3),
             nn.Linear(16, num_classes) # 你的任务是2分类，论文中是8分类，需根据任务调整
@@ -296,6 +317,7 @@ class MultiModalDamageDetector(nn.Module):
         img_features = self.resnet_fc(resnet_features)  # (batch_size, mlp_output_dim)
         
         concatenated_features = torch.cat([ts_features, img_features], dim=1)
+        concatenated_features = self.fusion_bn(concatenated_features)
         # 4. 门控机制
         # 计算门控权重 g
         gate_weights = self.gate(concatenated_features) 
@@ -336,8 +358,28 @@ class OffshoreDamageDetectionSystem:
         
         # 定义图像变换, gvr的图像变换不能使用 flip 和 rotate
         self.train_transform = transforms.Compose([
-            # 由于通道是物理特征，这里的 jitter 参数建议设置小一点
-            transforms.ColorJitter(brightness=0.2, contrast=0.15, saturation=0.1, hue=0),
+            # 1. 沿时间/空间轴的几何增强（不改变物理量，只改变位置）
+            # 类比 RandomResizedCrop，但更温和，避免破坏太多结构
+            transforms.RandomResizedCrop(
+                size=(224, 224),
+                scale=(0.90, 1.0),  # 最多保留 90% 区域，再缩回 224
+                ratio=(0.95, 1.05), # 保持接近正方形
+            ),
+
+            # 2. X 轴轻微平移，模拟传感器位置不确定性
+            SmallRandomTranslation(max_dx=3),
+
+            # 3. 小核高斯模糊，模拟带宽有限与插值平滑
+            transforms.GaussianBlur(kernel_size=3, sigma=(0.3, 1.1)),
+
+            # 4. 随机擦除：强迫模型不只依赖局部峰值
+            transforms.RandomErasing(p=0.3, scale=(0.02, 0.08), ratio=(0.3, 3.0)),
+
+            # 5. 标准化
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+
+        self.valid_transform = transforms.Compose([
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ])
 
@@ -572,7 +614,13 @@ class OffshoreDamageDetectionSystem:
         返回:
             history: 训练历史 {loss, accuracy, val_loss, val_accuracy}
         """
-        criterion = nn.CrossEntropyLoss(label_smoothing=0.05) # 用较低的标签平滑，防止过拟合
+        # 在 train 函数开始时冻结 ResNet
+        #for param in self.model.resnet.parameters():
+         #   param.requires_grad = False
+        #for param in self.model.resnet_fc.parameters():
+         #   param.requires_grad = False
+
+        criterion = nn.CrossEntropyLoss(label_smoothing=0.03) # 标签平滑
         #optimizer = optim.Adam(self.model.parameters(), lr=learning_rate, weight_decay=1e-4)
 
         # 1. 定义参数组
@@ -595,11 +643,12 @@ class OffshoreDamageDetectionSystem:
         finetune_lr = learning_rate * 1
 
         # 2. 设置差异学习率
-        optimizer = optim.Adam([
+        optimizer = optim.AdamW([
             {'params': base_params, 'lr': base_lr},
             {'params': classifier_params, 'lr': classifier_lr},
-            {'params': finetune_params, 'lr': finetune_lr} 
-        ], weight_decay=1e-4)
+            {'params': finetune_params, 'lr': finetune_lr}
+            #{'params': self.model.resnet_fc.parameters(), 'lr': finetune_lr}
+        ], weight_decay=3e-4)
 
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode='min', factor=0.5, patience=5
@@ -633,6 +682,23 @@ class OffshoreDamageDetectionSystem:
                 loss = criterion(outputs, labels)
                 
                 loss.backward()
+                # === 梯度监控与裁剪 ===
+                # 获取各分支的梯度范数
+                ts_grad_norm = 0.0
+                img_grad_norm = 0.0
+                
+                for name, param in self.model.named_parameters():
+                    if param.grad is not None:
+                        if 'ts_cnn' in name:
+                            ts_grad_norm += param.grad.data.norm(2).item() ** 2
+                        if 'resnet' in name:
+                            img_grad_norm += param.grad.data.norm(2).item() ** 2
+                
+                ts_grad_norm = ts_grad_norm ** 0.5
+                img_grad_norm = img_grad_norm ** 0.5
+
+                # 使用全局裁剪防止爆炸，这能起到隐式的平衡作用
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                 optimizer.step()
                 
                 train_loss += loss.item()
@@ -641,7 +707,8 @@ class OffshoreDamageDetectionSystem:
                 train_correct += (predicted == labels).sum().item()
                 
                 if (batch_idx + 1) % 20 == 0:  # 按epoch打印进度太慢
-                    print(f"Processing Batch {batch_idx + 1}/{len(train_loader)} - Loss: {loss.item():.4f}")
+                    # 如果图像分支梯度远大于时序分支，可以适当降低其学习率
+                    print(f"Batch {batch_idx + 1}/{len(train_loader)} Loss: {loss.item():.4f} TS Grad: {ts_grad_norm:.4f} Img Grad: {img_grad_norm:.4f} Ratio: {img_grad_norm/(ts_grad_norm+1e-8):.2f}")
             # 验证阶段
             self.model.eval()
             val_loss = 0.0
@@ -691,10 +758,23 @@ class OffshoreDamageDetectionSystem:
             
             # 打印训练进度
             if (epoch + 1) % 1 == 0:
-                print(f'Epoch [{epoch+1}/{epochs}], '
+                print(f'\nEpoch [{epoch+1}/{epochs}], '
                       f'Train Loss: {avg_train_loss:.4f}, Acc: {train_accuracy:.2f}%, '
-                      f'Val Loss: {avg_val_loss:.4f}, Acc: {val_accuracy:.2f}%')
-        
+                      f'Val Loss: {avg_val_loss:.4f}, Acc: {val_accuracy:.2f}%\n')
+            '''
+            if epoch + 1 == 1:
+                print(f"epoch {epoch+1}: 解冻图像分支，开始联合训练...")
+                for param in self.model.resnet.parameters():
+                    param.requires_grad = True
+                for param in self.model.resnet_fc.parameters(): 
+                    param.requires_grad = True
+                optimizer.add_param_group({
+                    'params': finetune_params, 
+                    #'params': self.model.resnet_fc.parameters(),
+                    'lr': finetune_lr,  # 使用较小学习率微调
+                    'weight_decay': 2e-4
+                })
+            '''
         return history
     
     def evaluate(self, test_loader: DataLoader) -> Dict[str, float]:

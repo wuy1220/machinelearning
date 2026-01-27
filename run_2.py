@@ -16,11 +16,11 @@ plt.rcParams['axes.unicode_minus'] = False # 解决负号显示问题
 
 
 class H5LazyDataset(Dataset):
-    def __init__(self, data_dir, window_length=2000, transform=None):
+    def __init__(self, data_dir, window_length=2000, transform=None, is_training=True):
         self.data_dir = data_dir
         self.window_length = window_length # 需要保存窗口长度
         self.transform = transform
-        
+        self.is_training = is_training
         # 1. 扫描目录
         self.h5_files = sorted(
             [f for f in os.listdir(data_dir) if f.endswith('.h5')],
@@ -96,9 +96,25 @@ class H5LazyDataset(Dataset):
             # 6. 归一化
             ts_mean = np.mean(time_series)
             ts_std = np.std(time_series) + 1e-8
-            time_series = (time_series - ts_mean) / ts_std
-            
-            
+            time_series = (time_series - ts_mean) / ts_std  
+
+            # === 新增：时间序列数据增强（仅在训练模式） ===
+            if self.is_training:
+                # 1. 添加高斯噪声，标准差 0.01-0.02
+                noise_std = 0.01
+                noise = np.random.normal(0, noise_std, time_series.shape)
+                time_series = time_series + noise
+                
+                # 2. 幅度缩放 [0.95, 1.05]
+                scale = np.random.uniform(0.95, 1.05)
+                time_series = time_series * scale
+
+                # 3. (可选) 随机丢弃少量频点
+                # 模拟传感器故障或数据缺失
+                if np.random.random() < 0.05:  # 5% 概率
+                    mask = np.random.random(time_series.shape) > 0.05  # 随机遮蔽 5% 的点
+                    time_series = time_series * mask
+
         # 图像维度处理
         image = image.transpose(2, 0, 1).astype(np.float32)
         
@@ -343,12 +359,17 @@ def main_with_new_simulator():
 
     # 使用 Subset 创建子数据集 (这只是对索引的包装，不加载实际数据)
     # 训练集使用训练时的 transform (包含数据增强)
-    train_dataset = Subset(full_dataset, train_idx)
+    train_dataset_base = H5LazyDataset(
+        data_dir=DATA_DIR,
+        transform=detection_system.train_transform,
+        is_training=True  # === 关键：训练模式，应用数据增强 ===
+    )
+    train_dataset = Subset(train_dataset_base, train_idx)
     # 验证集和测试集需要重新创建一个 dataset 实例或修改 transform 属性，
     # 因为原始 dataset 的 transform 可能是 train_transform
     # 这里为了简单，我们克隆一个 dataset 用于 val/test
-    val_dataset_base = H5LazyDataset(DATA_DIR, transform=detection_system.valid_transform)
-    test_dataset_base = H5LazyDataset(DATA_DIR, transform=detection_system.valid_transform)
+    val_dataset_base = H5LazyDataset(DATA_DIR, transform=detection_system.valid_transform, is_training=False)
+    test_dataset_base = H5LazyDataset(DATA_DIR, transform=detection_system.valid_transform, is_training=False)
     
     val_dataset = Subset(val_dataset_base, val_idx)
     test_dataset = Subset(test_dataset_base, test_idx)
@@ -387,6 +408,14 @@ def main_with_new_simulator():
     # ==================== 5. 评估模型 ====================
     print("\n[步骤5] 评估模型性能...")
     
+    # === [新增] 加载在验证集上表现最好的模型 ===
+    best_model_path = 'best_damage_detector.pth'
+    if os.path.exists(best_model_path):
+        print(f"  正在加载最佳模型: {best_model_path}")
+        detection_system.model.load_state_dict(torch.load(best_model_path))
+    else:
+        print(f"  ⚠ 警告: 未找到 {best_model_path}，将使用训练结束时的模型（可能过拟合）")
+
     metrics = detection_system.evaluate(test_loader)
     
     print(f"\n{'='*50}")

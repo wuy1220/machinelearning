@@ -781,7 +781,7 @@ if __name__ == "__main__":
         num_scenarios=2500,
         healthy_ratio=0.4,
         min_severity=0.1,  # 测试模型能力，如果跑通再调小
-        max_severity=0.5
+        max_severity=0.35
     )
     
     print("\n" + "=" * 60)
