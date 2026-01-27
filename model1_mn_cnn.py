@@ -729,15 +729,16 @@ class OffshoreDamageDetectionSystem:
                 # 梯度分层裁剪
                 ts_clip_threshold = 0.8  # 严格限制 1D-CNN，防止梯度爆炸
                 img_clip_threshold = 2.0 # 放宽 MobileNet，防止梯度因全局裁剪而消失
+                
+                # 收集参数
+                ts_params = [p for n, p in self.model.named_parameters() if 'ts_cnn' in n and p.grad is not None]
+                img_params = [p for n, p in self.model.named_parameters() if 'resnet' in n and p.grad is not None]
 
-                for name, param in self.model.named_parameters():
-                    if param.grad is not None:
-                        if 'ts_cnn' in name:
-                            # 对 1D-CNN 分支进行严格裁剪，使其变化更温和
-                            torch.nn.utils.clip_grad_norm_(param, max_norm=ts_clip_threshold)
-                        elif 'resnet' in name or 'resnet_fc' in name:
-                            # 对图像分支进行宽松裁剪
-                            torch.nn.utils.clip_grad_norm_(param, max_norm=img_clip_threshold)
+                # 一次性裁剪
+                if ts_params:
+                    torch.nn.utils.clip_grad_norm_(ts_params, max_norm=ts_clip_threshold)
+                if img_params:
+                    torch.nn.utils.clip_grad_norm_(img_params, max_norm=img_clip_threshold)
 
                 optimizer.step()
                 
