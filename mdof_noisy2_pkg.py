@@ -525,11 +525,11 @@ class TimeStackedGVRFeatureExtractor:
         
         return np.array(feature_maps, dtype=np.float32)
 
-
 class ImprovedDamageDataGenerator:
     """
     改进的损伤数据生成器
     集成时序堆叠GVR特征提取器
+    支持“分片”存储：每个 HDF5 文件包含多个场景
     """
     
     def __init__(self, simulator, gvr_extractor, output_dir='./jacket_damage_data_improved'):
@@ -545,138 +545,89 @@ class ImprovedDamageDataGenerator:
         os.makedirs(output_dir, exist_ok=True)
         self.metadata = []
     
-    def generate_single_damage_scenario(self,
-                                        damaged_dofs,
-                                        severity_ratios,
-                                        scenario_id,
-                                        save_data=True):
+    def _compute_single_scenario_data(self, damaged_dofs, severity_ratios, scenario_id):
         """
-        生成单个损伤场景
+        内部方法：计算单个损伤场景的数据（不保存）
         
-        Args:
-            damaged_dofs: 损伤自由度列表
-            severity_ratios: 损伤严重程度列表
-            scenario_id: 场景ID
-            save_data: 是否保存数据
+        Returns:
+            dict: 包含 acceleration, feature_maps, labels, damage_class 等的字典
         """
-        # 采用动态且可复现的种子，防止相同噪声模式导致数据泄漏
+        # 1. 生成激励和响应
         current_seed_healthy = 42000 + scenario_id * 2
         current_seed_damaged = 24 + scenario_id
 
-        # 1. 生成激励和响应
         F1 = self.simulator.generate_excitation(excitation_type='filtered_noise', seed=current_seed_healthy)
         F2 = self.simulator.generate_excitation(excitation_type='filtered_noise', seed=current_seed_damaged)
         healthy_response = self.simulator.simulate_response(self.simulator.K0, F1)
         K_damaged = self.simulator.apply_damage(damaged_dofs, severity_ratios)
         damaged_response = self.simulator.simulate_response(K_damaged, F2)
         
-        # 1.5. 添加噪声
-        # mems加速度计的snr在40-80db之间，顶级光纤加速度计可达110db+
+        # 2. 添加噪声
         snr_db = random.randint(75, 85)
         healthy_response = self.simulator.add_realistic_noise(healthy_response, snr_db=snr_db, seed=current_seed_healthy, amplitude_ratio=0.0003) 
         damaged_response = self.simulator.add_realistic_noise(damaged_response, snr_db=snr_db, seed=current_seed_damaged, amplitude_ratio=0.0003) 
         
-        # 2. 使用时序堆叠提取特征
+        # 3. 提取特征
         stacked_features, num_samples = self.gvr_extractor.extract_stacked_gvr_features(
             damaged_response, healthy_response
         )
         
-        # 3. 生成时序-空间特征图
         feature_maps = self.gvr_extractor.generate_time_space_feature_map(stacked_features)
         
         # 4. 生成标签
         labels = np.zeros(self.simulator.num_degrees, dtype=int)
         if damaged_dofs:
             labels[np.array(damaged_dofs)] = 1
-        
-        # 扩展标签以匹配样本数
         labels_array = np.tile(labels, (num_samples, 1))
         
-        # 5. 确定损伤类别
         damage_class = self._determine_damage_class(damaged_dofs, severity_ratios)
 
-        # 6. 保存数据
-        if save_data:
-            # 计算需要保存的加速度数据长度
-            total_steps_needed = (num_samples - 1) * self.gvr_extractor.step_size + \
-                               self.gvr_extractor.num_stack_windows * self.gvr_extractor.window_length
-            acc_to_save = damaged_response[:total_steps_needed]
-            
-            self._save_scenario_data(
-                acc_to_save,
-                feature_maps,
-                labels_array[0],
-                damage_class,
-                damaged_dofs,
-                severity_ratios,
-                scenario_id
-            )
-        
-        self.metadata.append({
-            'scenario_id': scenario_id,
-            'damaged_dofs': damaged_dofs,
-            'severity_ratios': severity_ratios,
-            'damage_class': damage_class,
-            'num_samples': feature_maps.shape[0]
-        })
+        # 5. 计算需要保存的加速度数据长度
+        total_steps_needed = (num_samples - 1) * self.gvr_extractor.step_size + \
+                           self.gvr_extractor.num_stack_windows * self.gvr_extractor.window_length
+        acc_to_save = damaged_response[:total_steps_needed]
         
         return {
-            'acceleration': damaged_response,
-            'healthy': healthy_response,
+            'acceleration': acc_to_save,
             'feature_maps': feature_maps,
-            'labels': labels_array
+            'labels': labels_array[0], # 注意：这里只取第一个标签作为该场景的标签集
+            'damage_class': damage_class,
+            'damaged_dofs': damaged_dofs,
+            'severity_ratios': severity_ratios,
+            'num_samples': num_samples,
+            'scenario_id': scenario_id
         }
-    
+
+    def _write_scenario_to_group(self, hf, group_name, data_dict):
+        """
+        将场景数据写入 HDF5 文件的特定 Group
+        """
+        grp = hf.create_group(group_name)
+        
+        # 保存数据（带压缩）
+        grp.create_dataset('acceleration', data=data_dict['acceleration'].astype(np.float32), 
+                          compression='gzip', compression_opts=4)
+        grp.create_dataset('feature_maps', data=data_dict['feature_maps'].astype(np.float32), 
+                          compression='gzip', compression_opts=4)
+        
+        # 保存标签
+        grp.create_dataset('labels', data=data_dict['labels'].astype(np.uint8))
+        grp.create_dataset('damage_class', data=np.array([data_dict['damage_class']], dtype=np.uint8))
+        
+        # 保存属性
+        grp.attrs['damaged_dofs'] = np.array(data_dict['damaged_dofs'])
+        grp.attrs['severity_ratios'] = np.array(data_dict['severity_ratios'])
+        grp.attrs['scenario_id'] = data_dict['scenario_id']
+        grp.attrs['window_length'] = self.gvr_extractor.window_length
+        grp.attrs['step_size'] = self.gvr_extractor.step_size
+        grp.attrs['num_stack_windows'] = self.gvr_extractor.num_stack_windows
+
     def _determine_damage_class(self, damaged_dofs, severity_ratios):
         """确定损伤类别"""
         if len(damaged_dofs) == 0:
-            return 0  # 健康
+            return 0
         else:
             return 1
-        '''
-        elif len(damaged_dofs) == 1:
-            s = severity_ratios[0]
-            if s < 0.3:
-                return 1  # 轻度损伤
-            elif s < 0.6:
-                return 2  # 中度损伤
-            else:
-                return 3  # 重度损伤
-        else:
-            return 4  # 多处损伤
-        '''
-
-    
-    def _save_scenario_data(self, acc, feat_maps, labels, damage_class, dofs, sevs, sid):
-        """保存场景数据到HDF5文件"""
-        filename = os.path.join(self.output_dir, f'scenario_{sid:04d}.h5')
-        
-        # 数据类型转换（节省空间）
-        acc = acc.astype(np.float32)
-        feat_maps = feat_maps.astype(np.float32)
-        labels = labels.astype(np.uint8)
-        
-        with h5py.File(filename, 'w') as hf:
-            # 保存加速度数据（带压缩）
-            hf.create_dataset('acceleration', data=acc, 
-                             compression='gzip', compression_opts=4)
-            
-            # 保存特征图（带压缩）
-            hf.create_dataset('feature_maps', data=feat_maps, 
-                             compression='gzip', compression_opts=4)
-            
-            # 保存标签
-            hf.create_dataset('labels', data=labels)
-            
-            # 保存损伤类别
-            hf.create_dataset('damage_class', data=np.array([damage_class], dtype=np.uint8))
-            
-            # 保存属性
-            hf.attrs['damaged_dofs'] = np.array(dofs)
-            hf.attrs['severity_ratios'] = np.array(sevs)
-            hf.attrs['window_length'] = self.gvr_extractor.window_length
-            hf.attrs['step_size'] = self.gvr_extractor.step_size
-            hf.attrs['num_stack_windows'] = self.gvr_extractor.num_stack_windows
 
     def generate_comprehensive_dataset(self,
                                       num_scenarios=100,
@@ -684,41 +635,104 @@ class ImprovedDamageDataGenerator:
                                       max_damage_dofs=3,
                                       min_severity=0.15,
                                       max_severity=0.8,
-                                      healthy_ratio=0.3):
+                                      healthy_ratio=0.3,
+                                      scenarios_per_shard=200):  # 【新增】每个分片包含的场景数
         """
-        生成综合数据集
+        生成综合数据集（分片存储）
         
         Args:
-            num_scenarios: 总场景数
-            min_damage_dofs: 最小损伤位置数
-            max_damage_dofs: 最大损伤位置数
-            min_severity: 最小损伤严重程度
-            max_severity: 最大损伤严重程度
-            healthy_ratio: 健康样本比例
+            scenarios_per_shard: 每个 HDF5 文件包含的场景数。建议 100-500。
         """
-        print(f"开始生成改进版数据集（时序-空间融合），总场景数: {num_scenarios}...")
-        print(f"堆叠窗口数: {self.gvr_extractor.num_stack_windows}")
+        print(f"开始生成改进版数据集（分片存储），总场景数: {num_scenarios}...")
+        print(f"每个分片包含 {scenarios_per_shard} 个场景")
         print(f"特征图尺寸: (224, 224, 3) - X轴=空间，Y轴=时序")
         
         num_healthy = int(num_scenarios * healthy_ratio)
         num_damaged = num_scenarios - num_healthy
         
+        current_shard_idx = 0
+        scenarios_in_current_shard = 0
+        hf = None # 当前 HDF5 文件句柄
+
         # 生成健康样本
         print(f"\n生成健康样本: {num_healthy} ...")
         for i in tqdm(range(num_healthy), desc="健康样本"):
-            self.generate_single_damage_scenario([], [], i, save_data=True)
+            # 检查是否需要创建新分片
+            if scenarios_in_current_shard == 0:
+                if hf is not None:
+                    hf.close()
+                shard_path = os.path.join(self.output_dir, f'data_shard_{current_shard_idx:04d}.h5')
+                print(f"  -> 创建新分片: {shard_path}")
+                hf = h5py.File(shard_path, 'w')
+            
+            # 计算数据
+            data = self._compute_single_scenario_data([], [], i)
+            
+            # 写入分片
+            group_name = f'scenario_{i:06d}'
+            self._write_scenario_to_group(hf, group_name, data)
+            
+            # 记录元数据 (增加 shard_id)
+            self.metadata.append({
+                'scenario_id': data['scenario_id'],
+                'shard_id': current_shard_idx,
+                'group_name': group_name,
+                'damaged_dofs': data['damaged_dofs'],
+                'severity_ratios': data['severity_ratios'],
+                'damage_class': data['damage_class'],
+                'num_samples': data['num_samples']
+            })
+            
+            # 更新计数器
+            scenarios_in_current_shard += 1
+            if scenarios_in_current_shard >= scenarios_per_shard:
+                hf.close()
+                hf = None
+                scenarios_in_current_shard = 0
+                current_shard_idx += 1
         
         # 生成损伤样本
         print(f"\n生成损伤样本: {num_damaged} ...")
         for i in tqdm(range(num_damaged), desc="损伤样本"):
             sid = num_healthy + i
+            
+            if scenarios_in_current_shard == 0:
+                if hf is not None:
+                    hf.close()
+                shard_path = os.path.join(self.output_dir, f'data_shard_{current_shard_idx:04d}.h5')
+                print(f"  -> 创建新分片: {shard_path}")
+                hf = h5py.File(shard_path, 'w')
+                
             num_damage = np.random.randint(min_damage_dofs, max_damage_dofs + 1)
             dofs = np.random.choice(range(self.simulator.num_degrees), 
                                    num_damage, replace=False).tolist()
             sevs = np.random.uniform(min_severity, max_severity, num_damage).tolist()
             
-            self.generate_single_damage_scenario(dofs, sevs, sid, save_data=True)
-        
+            data = self._compute_single_scenario_data(dofs, sevs, sid)
+            group_name = f'scenario_{sid:06d}'
+            self._write_scenario_to_group(hf, group_name, data)
+            
+            self.metadata.append({
+                'scenario_id': data['scenario_id'],
+                'shard_id': current_shard_idx,
+                'group_name': group_name,
+                'damaged_dofs': data['damaged_dofs'],
+                'severity_ratios': data['severity_ratios'],
+                'damage_class': data['damage_class'],
+                'num_samples': data['num_samples']
+            })
+            
+            scenarios_in_current_shard += 1
+            if scenarios_in_current_shard >= scenarios_per_shard:
+                hf.close()
+                hf = None
+                scenarios_in_current_shard = 0
+                current_shard_idx += 1
+
+        # 关闭最后一个可能未满的文件
+        if hf is not None:
+            hf.close()
+            
         self._save_metadata()
         print("\n数据集生成完成！")
         print(f"输出目录: {self.output_dir}")
@@ -771,14 +785,14 @@ if __name__ == "__main__":
     generator = ImprovedDamageDataGenerator(
         simulator=simulator,
         gvr_extractor=gvr_extractor,
-        output_dir='./jacket_damage_data_timespace'
+        output_dir='./jacket_damage_data_timespace2'
     )
     
     # 生成数据集
     print("\n开始生成数据集")
     print("=" * 60)
     generator.generate_comprehensive_dataset(
-        num_scenarios=2500,
+        num_scenarios=3000,
         healthy_ratio=0.4,
         min_severity=0.1,  # 测试模型能力，如果跑通再调小
         max_severity=0.35
