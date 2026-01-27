@@ -362,7 +362,7 @@ class OffshoreDamageDetectionSystem:
             # 类比 RandomResizedCrop，但更温和，避免破坏太多结构
             transforms.RandomResizedCrop(
                 size=(224, 224),
-                scale=(0.90, 1.0),  # 最多保留 90% 区域，再缩回 224
+                scale=(0.95, 1.0),  # 最多保留区域，再缩回 224
                 ratio=(0.95, 1.05), # 保持接近正方形
             ),
 
