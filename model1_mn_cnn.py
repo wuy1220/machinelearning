@@ -638,7 +638,7 @@ class OffshoreDamageDetectionSystem:
                 base_params.append(param)
 
         # 调节差异学习率
-        base_lr = learning_rate * 0.15
+        base_lr = learning_rate * 0.06
         classifier_lr = learning_rate * 1
         finetune_lr = learning_rate * 1
 
@@ -682,7 +682,7 @@ class OffshoreDamageDetectionSystem:
                 loss = criterion(outputs, labels)
                 
                 loss.backward()
-                '''
+                
                 # === 强制平衡梯度 ===
                 # 1. 收集两个分支的参数
                 ts_params = [p for n, p in self.model.named_parameters() if 'ts_cnn' in n and p.grad is not None]
@@ -692,7 +692,7 @@ class OffshoreDamageDetectionSystem:
                     # 2. 计算各分支的梯度总范数
                     ts_norm = torch.norm(torch.stack([torch.norm(p.grad) for p in ts_params]))
                     img_norm = torch.norm(torch.stack([torch.norm(p.grad) for p in img_params]))
-                    
+                    '''
                     # 3. 计算平衡因子
                     # 目标：让两个分支的梯度范数相等，或者达到某个比例 (比如 1:1)
                     # 如果不想完全相等，可以乘一个系数，例如 1.5，允许时序稍微强一点
@@ -700,17 +700,17 @@ class OffshoreDamageDetectionSystem:
                     
                     scale_ts = target_norm / (ts_norm + 1e-8)
                     scale_img = target_norm / (img_norm + 1e-8)
-                    
-                    # 限制缩放范围，防止突变 (可选)
-                    scale_ts = torch.clamp(scale_ts, 0.1, 10.0)
-                    scale_img = torch.clamp(scale_img, 0.1, 10.0)
-                    
-                    # 4. 应用缩放
-                    for p in ts_params:
-                        p.grad.data *= scale_ts
-                    for p in img_params:
-                        p.grad.data *= scale_img
-                '''
+                    '''
+                    max_ratio = 4.0 
+                    if epoch + 1 <= 3 and ts_norm / (img_norm + 1e-8) > max_ratio:
+                        # 只有当比例严重失衡时才干预
+                        scale_ts = (0.7 * max_ratio) * img_norm / (ts_norm + 1e-8)
+                        # 限制缩放范围，防止突变 (可选)
+                        scale_ts = torch.clamp(scale_ts, 0.1, 10.0)
+                        # 4. 应用缩放
+                        for p in ts_params:
+                            p.grad.data *= scale_ts
+                
                 # === 梯度监控与裁剪 ===
                 # 获取各分支的梯度范数
                 ts_grad_norm = 0.0
@@ -726,8 +726,19 @@ class OffshoreDamageDetectionSystem:
                 ts_grad_norm = ts_grad_norm ** 0.5
                 img_grad_norm = img_grad_norm ** 0.5
 
-                # 使用全局裁剪防止爆炸，这能起到隐式的平衡作用
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                # 梯度分层裁剪
+                ts_clip_threshold = 0.8  # 严格限制 1D-CNN，防止梯度爆炸
+                img_clip_threshold = 2.0 # 放宽 MobileNet，防止梯度因全局裁剪而消失
+
+                for name, param in self.model.named_parameters():
+                    if param.grad is not None:
+                        if 'ts_cnn' in name:
+                            # 对 1D-CNN 分支进行严格裁剪，使其变化更温和
+                            torch.nn.utils.clip_grad_norm_(param, max_norm=ts_clip_threshold)
+                        elif 'resnet' in name or 'resnet_fc' in name:
+                            # 对图像分支进行宽松裁剪
+                            torch.nn.utils.clip_grad_norm_(param, max_norm=img_clip_threshold)
+
                 optimizer.step()
                 
                 train_loss += loss.item()

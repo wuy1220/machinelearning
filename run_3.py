@@ -287,7 +287,7 @@ def main_with_new_simulator():
     BATCH_SIZE = 32  # 采用 lamb 优化器时，batch_size 应当设置较大的值, 但大 batch 会导致泛化能力下降
     EPOCHS = 30
     LEARNING_RATE = 0.001
-    EARLY_STOPPING_PATIENCE = 8
+    EARLY_STOPPING_PATIENCE = 6
     
     # ==================== 1. 加载数据 ====================
     print("\n[步骤1] 加载仿真数据...")
