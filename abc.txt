@@ -1,0 +1,252 @@
+======================================================================
+使用新仿真器 (HDF5) 数据训练损伤检测模型
+======================================================================
+
+[步骤1] 加载仿真数据...
+[Optimization] 发现 15 个数据分片，正在构建索引...
+[Optimization] 索引构建完成，总样本数: 9000
+
+✓ 样本数 (9000) 足够进行训练
+
+[步骤2] 初始化检测系统...
+  ✓ 设备: cpu
+  ✓ 类别数: 2
+  ✓ 模型参数量: 3,241,826
+
+[步骤3] 划分数据集 (适配分片结构)...
+  ✓ 训练集场景数: 1800, 样本数: 5400
+  ✓ 验证集场景数: 600, 样本数: 1800
+  ✓ 测试集场景数: 600, 样本数: 1800
+[Optimization] 发现 15 个数据分片，正在构建索引...
+[Optimization] 索引构建完成，总样本数: 9000
+[Optimization] 发现 15 个数据分片，正在构建索引...
+[Optimization] 索引构建完成，总样本数: 9000
+[Optimization] 发现 15 个数据分片，正在构建索引...
+[Optimization] 索引构建完成，总样本数: 9000
+
+[步骤4] 创建 DataLoader...
+
+[步骤5] 训练模型...
+  训练轮数: 30
+  学习率: 0.001
+  早停耐心值: 6
+Batch 20/169 Loss: 0.8340 TS Grad: 2.5368 Img Grad: 2.2199 Ratio: 0.88
+Batch 40/169 Loss: 0.5745 TS Grad: 1.7791 Img Grad: 1.5952 Ratio: 0.90
+Batch 60/169 Loss: 0.6735 TS Grad: 1.7955 Img Grad: 0.7347 Ratio: 0.41
+Batch 80/169 Loss: 0.6095 TS Grad: 1.8941 Img Grad: 0.8450 Ratio: 0.45
+Batch 100/169 Loss: 0.6043 TS Grad: 2.2929 Img Grad: 0.4672 Ratio: 0.20
+Batch 120/169 Loss: 0.6124 TS Grad: 2.0358 Img Grad: 0.9286 Ratio: 0.46
+Batch 140/169 Loss: 0.6079 TS Grad: 2.5283 Img Grad: 0.6939 Ratio: 0.27
+Batch 160/169 Loss: 0.5771 TS Grad: 2.9045 Img Grad: 0.6451 Ratio: 0.22
+
+Epoch [1/30], Train Loss: 0.6573, Acc: 60.06%, Val Loss: 0.6017, Acc: 68.00%
+
+Batch 20/169 Loss: 0.7474 TS Grad: 4.2738 Img Grad: 0.2129 Ratio: 0.05
+Batch 40/169 Loss: 0.6568 TS Grad: 4.5922 Img Grad: 0.4719 Ratio: 0.10
+Batch 60/169 Loss: 0.5432 TS Grad: 3.2095 Img Grad: 0.1808 Ratio: 0.06
+Batch 80/169 Loss: 0.4950 TS Grad: 2.1301 Img Grad: 0.2543 Ratio: 0.12
+Batch 100/169 Loss: 0.6000 TS Grad: 3.8791 Img Grad: 0.3863 Ratio: 0.10
+Batch 120/169 Loss: 0.5124 TS Grad: 2.7927 Img Grad: 0.5809 Ratio: 0.21
+Batch 140/169 Loss: 0.6000 TS Grad: 2.8936 Img Grad: 0.2254 Ratio: 0.08
+Batch 160/169 Loss: 0.4916 TS Grad: 3.2505 Img Grad: 0.1839 Ratio: 0.06
+
+Epoch [2/30], Train Loss: 0.5740, Acc: 70.35%, Val Loss: 0.5892, Acc: 71.33%
+
+Batch 20/169 Loss: 0.4378 TS Grad: 2.4680 Img Grad: 0.2447 Ratio: 0.10
+Batch 40/169 Loss: 0.4773 TS Grad: 4.7419 Img Grad: 2.1739 Ratio: 0.46
+Batch 60/169 Loss: 0.6130 TS Grad: 4.6620 Img Grad: 0.7270 Ratio: 0.16
+Batch 80/169 Loss: 0.4996 TS Grad: 4.4099 Img Grad: 0.4348 Ratio: 0.10
+Batch 100/169 Loss: 0.5093 TS Grad: 3.7229 Img Grad: 0.4257 Ratio: 0.11
+Batch 120/169 Loss: 0.4433 TS Grad: 3.1001 Img Grad: 0.3994 Ratio: 0.13
+Batch 140/169 Loss: 0.5497 TS Grad: 3.2605 Img Grad: 0.2938 Ratio: 0.09
+Batch 160/169 Loss: 0.6017 TS Grad: 5.2007 Img Grad: 0.6174 Ratio: 0.12
+
+Epoch [3/30], Train Loss: 0.5414, Acc: 72.93%, Val Loss: 0.5397, Acc: 72.67%
+
+Batch 20/169 Loss: 0.5597 TS Grad: 5.3440 Img Grad: 0.8314 Ratio: 0.16
+Batch 40/169 Loss: 0.4894 TS Grad: 2.6409 Img Grad: 0.9486 Ratio: 0.36
+Batch 60/169 Loss: 0.6926 TS Grad: 5.0643 Img Grad: 0.7331 Ratio: 0.14
+Batch 80/169 Loss: 0.4004 TS Grad: 2.6335 Img Grad: 0.2683 Ratio: 0.10
+Batch 100/169 Loss: 0.4990 TS Grad: 4.1846 Img Grad: 0.8860 Ratio: 0.21
+Batch 120/169 Loss: 0.4495 TS Grad: 3.6680 Img Grad: 1.5901 Ratio: 0.43
+Batch 140/169 Loss: 0.5010 TS Grad: 3.4310 Img Grad: 0.9008 Ratio: 0.26
+Batch 160/169 Loss: 0.5011 TS Grad: 2.7140 Img Grad: 0.4502 Ratio: 0.17
+
+Epoch [4/30], Train Loss: 0.5066, Acc: 75.91%, Val Loss: 0.6637, Acc: 68.83%
+
+Batch 20/169 Loss: 0.5652 TS Grad: 4.6127 Img Grad: 0.6972 Ratio: 0.15
+Batch 40/169 Loss: 0.5330 TS Grad: 4.0456 Img Grad: 1.5144 Ratio: 0.37
+Batch 60/169 Loss: 0.3879 TS Grad: 3.9847 Img Grad: 0.6492 Ratio: 0.16
+Batch 80/169 Loss: 0.4115 TS Grad: 3.3570 Img Grad: 0.5977 Ratio: 0.18
+Batch 100/169 Loss: 0.4321 TS Grad: 3.0116 Img Grad: 0.5223 Ratio: 0.17
+Batch 120/169 Loss: 0.5141 TS Grad: 4.6584 Img Grad: 0.7525 Ratio: 0.16
+Batch 140/169 Loss: 0.3098 TS Grad: 2.5778 Img Grad: 0.5920 Ratio: 0.23
+Batch 160/169 Loss: 0.4019 TS Grad: 2.5208 Img Grad: 0.6350 Ratio: 0.25
+
+Epoch [5/30], Train Loss: 0.4608, Acc: 79.15%, Val Loss: 0.5228, Acc: 73.83%
+
+Batch 20/169 Loss: 0.3811 TS Grad: 2.6355 Img Grad: 0.9153 Ratio: 0.35
+Batch 40/169 Loss: 0.4729 TS Grad: 3.6430 Img Grad: 0.7820 Ratio: 0.21
+Batch 60/169 Loss: 0.5616 TS Grad: 4.8283 Img Grad: 1.1461 Ratio: 0.24
+Batch 80/169 Loss: 0.3607 TS Grad: 4.6984 Img Grad: 0.6467 Ratio: 0.14
+Batch 100/169 Loss: 0.4318 TS Grad: 4.4774 Img Grad: 1.6981 Ratio: 0.38
+Batch 120/169 Loss: 0.4616 TS Grad: 5.0714 Img Grad: 1.8189 Ratio: 0.36
+Batch 140/169 Loss: 0.3072 TS Grad: 3.4995 Img Grad: 1.3119 Ratio: 0.37
+Batch 160/169 Loss: 0.3296 TS Grad: 4.1276 Img Grad: 1.0904 Ratio: 0.26
+
+Epoch [6/30], Train Loss: 0.4274, Acc: 82.07%, Val Loss: 0.5027, Acc: 74.83%
+
+Batch 20/169 Loss: 0.4321 TS Grad: 3.8658 Img Grad: 1.4918 Ratio: 0.39
+Batch 40/169 Loss: 0.3704 TS Grad: 3.7696 Img Grad: 1.0032 Ratio: 0.27
+Batch 60/169 Loss: 0.4019 TS Grad: 2.6270 Img Grad: 0.8774 Ratio: 0.33
+Batch 80/169 Loss: 0.3598 TS Grad: 3.7169 Img Grad: 1.4382 Ratio: 0.39
+Batch 100/169 Loss: 0.5149 TS Grad: 5.3844 Img Grad: 1.3137 Ratio: 0.24
+Batch 120/169 Loss: 0.3889 TS Grad: 3.7490 Img Grad: 0.8648 Ratio: 0.23
+Batch 140/169 Loss: 0.4685 TS Grad: 3.6963 Img Grad: 1.0024 Ratio: 0.27
+Batch 160/169 Loss: 0.4649 TS Grad: 4.7540 Img Grad: 1.1191 Ratio: 0.24
+
+Epoch [7/30], Train Loss: 0.3941, Acc: 83.80%, Val Loss: 0.7084, Acc: 67.11%
+
+Batch 20/169 Loss: 0.2589 TS Grad: 2.4048 Img Grad: 0.3786 Ratio: 0.16
+Batch 40/169 Loss: 0.2500 TS Grad: 2.0579 Img Grad: 0.6843 Ratio: 0.33
+Batch 60/169 Loss: 0.3606 TS Grad: 3.8865 Img Grad: 1.2054 Ratio: 0.31
+Batch 80/169 Loss: 0.6116 TS Grad: 4.6070 Img Grad: 1.1771 Ratio: 0.26
+Batch 100/169 Loss: 0.4460 TS Grad: 3.1149 Img Grad: 0.6224 Ratio: 0.20
+Batch 120/169 Loss: 0.3181 TS Grad: 4.3671 Img Grad: 0.9759 Ratio: 0.22
+Batch 140/169 Loss: 0.3280 TS Grad: 2.8759 Img Grad: 1.3919 Ratio: 0.48
+Batch 160/169 Loss: 0.2861 TS Grad: 3.5800 Img Grad: 0.6318 Ratio: 0.18
+
+Epoch [8/30], Train Loss: 0.3669, Acc: 85.65%, Val Loss: 0.5139, Acc: 76.17%
+
+Batch 20/169 Loss: 0.2894 TS Grad: 4.1374 Img Grad: 1.5292 Ratio: 0.37
+Batch 40/169 Loss: 0.3829 TS Grad: 3.7051 Img Grad: 1.3814 Ratio: 0.37
+Batch 60/169 Loss: 0.3657 TS Grad: 3.0359 Img Grad: 0.9569 Ratio: 0.32
+Batch 80/169 Loss: 0.2446 TS Grad: 2.5457 Img Grad: 0.8223 Ratio: 0.32
+Batch 100/169 Loss: 0.3555 TS Grad: 3.2821 Img Grad: 1.1151 Ratio: 0.34
+Batch 120/169 Loss: 0.2237 TS Grad: 2.1455 Img Grad: 0.8987 Ratio: 0.42
+Batch 140/169 Loss: 0.3014 TS Grad: 4.1141 Img Grad: 0.9686 Ratio: 0.24
+Batch 160/169 Loss: 0.4279 TS Grad: 5.1944 Img Grad: 2.2933 Ratio: 0.44
+
+Epoch [9/30], Train Loss: 0.3329, Acc: 87.46%, Val Loss: 0.6038, Acc: 72.28%
+
+Batch 20/169 Loss: 0.2867 TS Grad: 3.7377 Img Grad: 1.5057 Ratio: 0.40
+Batch 40/169 Loss: 0.2098 TS Grad: 3.2526 Img Grad: 0.8656 Ratio: 0.27
+Batch 60/169 Loss: 0.3273 TS Grad: 4.2031 Img Grad: 1.2622 Ratio: 0.30
+Batch 80/169 Loss: 0.2405 TS Grad: 2.2935 Img Grad: 1.0444 Ratio: 0.46
+Batch 100/169 Loss: 0.3049 TS Grad: 4.5052 Img Grad: 2.4004 Ratio: 0.53
+Batch 120/169 Loss: 0.2513 TS Grad: 2.9755 Img Grad: 1.3090 Ratio: 0.44
+Batch 140/169 Loss: 0.2456 TS Grad: 3.0855 Img Grad: 0.8515 Ratio: 0.28
+Batch 160/169 Loss: 0.3083 TS Grad: 3.8936 Img Grad: 1.6847 Ratio: 0.43
+
+Epoch [10/30], Train Loss: 0.3066, Acc: 88.69%, Val Loss: 0.5369, Acc: 75.50%
+
+Batch 20/169 Loss: 0.3196 TS Grad: 4.2534 Img Grad: 1.8464 Ratio: 0.43
+Batch 40/169 Loss: 0.2970 TS Grad: 6.1398 Img Grad: 2.5084 Ratio: 0.41
+Batch 60/169 Loss: 0.1810 TS Grad: 1.4889 Img Grad: 0.8780 Ratio: 0.59
+Batch 80/169 Loss: 0.2436 TS Grad: 3.2793 Img Grad: 1.9010 Ratio: 0.58
+Batch 100/169 Loss: 0.3240 TS Grad: 4.3351 Img Grad: 1.5718 Ratio: 0.36
+Batch 120/169 Loss: 0.1551 TS Grad: 1.3726 Img Grad: 0.7937 Ratio: 0.58
+Batch 140/169 Loss: 0.1442 TS Grad: 1.7955 Img Grad: 0.6434 Ratio: 0.36
+Batch 160/169 Loss: 0.2186 TS Grad: 3.0864 Img Grad: 0.9966 Ratio: 0.32
+
+Epoch [11/30], Train Loss: 0.2705, Acc: 91.30%, Val Loss: 0.6092, Acc: 72.00%
+
+Batch 20/169 Loss: 0.4216 TS Grad: 5.7806 Img Grad: 3.5742 Ratio: 0.62
+Batch 40/169 Loss: 0.1616 TS Grad: 3.2963 Img Grad: 0.9804 Ratio: 0.30
+Batch 60/169 Loss: 0.3004 TS Grad: 3.6628 Img Grad: 1.6946 Ratio: 0.46
+Batch 80/169 Loss: 0.2818 TS Grad: 4.1298 Img Grad: 4.1909 Ratio: 1.01
+Batch 100/169 Loss: 0.4444 TS Grad: 4.3707 Img Grad: 1.7300 Ratio: 0.40
+Batch 120/169 Loss: 0.2865 TS Grad: 6.5104 Img Grad: 2.2104 Ratio: 0.34
+Batch 140/169 Loss: 0.2354 TS Grad: 3.7218 Img Grad: 2.3496 Ratio: 0.63
+Batch 160/169 Loss: 0.4762 TS Grad: 4.6420 Img Grad: 3.1686 Ratio: 0.68
+
+Epoch [12/30], Train Loss: 0.2466, Acc: 92.57%, Val Loss: 0.4993, Acc: 79.33%
+
+Batch 20/169 Loss: 0.1256 TS Grad: 1.5858 Img Grad: 0.8623 Ratio: 0.54
+Batch 40/169 Loss: 0.3157 TS Grad: 7.6538 Img Grad: 1.4475 Ratio: 0.19
+Batch 60/169 Loss: 0.1209 TS Grad: 0.9599 Img Grad: 0.4101 Ratio: 0.43
+Batch 80/169 Loss: 0.1521 TS Grad: 2.4695 Img Grad: 1.6692 Ratio: 0.68
+Batch 100/169 Loss: 0.2516 TS Grad: 3.7859 Img Grad: 2.3463 Ratio: 0.62
+Batch 120/169 Loss: 0.2291 TS Grad: 3.1317 Img Grad: 1.4889 Ratio: 0.48
+Batch 140/169 Loss: 0.3754 TS Grad: 3.2301 Img Grad: 1.2855 Ratio: 0.40
+Batch 160/169 Loss: 0.2928 TS Grad: 3.2342 Img Grad: 1.4106 Ratio: 0.44
+
+Epoch [13/30], Train Loss: 0.2279, Acc: 93.31%, Val Loss: 0.5182, Acc: 78.22%
+
+Batch 20/169 Loss: 0.2134 TS Grad: 3.2442 Img Grad: 1.4132 Ratio: 0.44
+Batch 40/169 Loss: 0.1442 TS Grad: 1.6716 Img Grad: 1.0282 Ratio: 0.62
+Batch 60/169 Loss: 0.2088 TS Grad: 2.8415 Img Grad: 2.1321 Ratio: 0.75
+Batch 80/169 Loss: 0.1922 TS Grad: 2.1997 Img Grad: 1.2010 Ratio: 0.55
+Batch 100/169 Loss: 0.1213 TS Grad: 2.1334 Img Grad: 1.0321 Ratio: 0.48
+Batch 120/169 Loss: 0.1631 TS Grad: 2.4308 Img Grad: 0.9592 Ratio: 0.39
+Batch 140/169 Loss: 0.2250 TS Grad: 2.9412 Img Grad: 1.4278 Ratio: 0.49
+Batch 160/169 Loss: 0.1067 TS Grad: 2.0081 Img Grad: 1.3943 Ratio: 0.69
+
+Epoch [14/30], Train Loss: 0.2045, Acc: 94.57%, Val Loss: 0.8320, Acc: 68.89%
+
+Batch 20/169 Loss: 0.1580 TS Grad: 2.7523 Img Grad: 1.4034 Ratio: 0.51
+Batch 40/169 Loss: 0.2036 TS Grad: 5.4987 Img Grad: 2.3209 Ratio: 0.42
+Batch 60/169 Loss: 0.1166 TS Grad: 1.2904 Img Grad: 0.5296 Ratio: 0.41
+Batch 80/169 Loss: 0.1710 TS Grad: 3.0814 Img Grad: 2.0504 Ratio: 0.67
+Batch 100/169 Loss: 0.1754 TS Grad: 4.2731 Img Grad: 2.3872 Ratio: 0.56
+Batch 120/169 Loss: 0.2612 TS Grad: 5.4512 Img Grad: 3.5568 Ratio: 0.65
+Batch 140/169 Loss: 0.2033 TS Grad: 3.1196 Img Grad: 1.9034 Ratio: 0.61
+Batch 160/169 Loss: 0.1475 TS Grad: 1.7091 Img Grad: 0.7996 Ratio: 0.47
+
+Epoch [15/30], Train Loss: 0.1910, Acc: 95.33%, Val Loss: 0.6376, Acc: 74.67%
+
+Batch 20/169 Loss: 0.1340 TS Grad: 2.0320 Img Grad: 0.9141 Ratio: 0.45
+Batch 40/169 Loss: 0.1111 TS Grad: 1.0869 Img Grad: 0.4195 Ratio: 0.39
+Batch 60/169 Loss: 0.1813 TS Grad: 4.2859 Img Grad: 2.0358 Ratio: 0.47
+Batch 80/169 Loss: 0.1208 TS Grad: 0.8997 Img Grad: 0.3945 Ratio: 0.44
+Batch 100/169 Loss: 0.1682 TS Grad: 3.2154 Img Grad: 2.9249 Ratio: 0.91
+Batch 120/169 Loss: 0.4093 TS Grad: 7.1325 Img Grad: 3.1327 Ratio: 0.44
+Batch 140/169 Loss: 0.1211 TS Grad: 0.9799 Img Grad: 0.7614 Ratio: 0.78
+Batch 160/169 Loss: 0.4680 TS Grad: 6.2951 Img Grad: 3.7777 Ratio: 0.60
+
+Epoch [16/30], Train Loss: 0.1835, Acc: 95.72%, Val Loss: 0.6071, Acc: 77.67%
+
+Batch 20/169 Loss: 0.1443 TS Grad: 2.1632 Img Grad: 1.1592 Ratio: 0.54
+Batch 40/169 Loss: 0.1371 TS Grad: 2.3325 Img Grad: 2.9662 Ratio: 1.27
+Batch 60/169 Loss: 0.1373 TS Grad: 1.6569 Img Grad: 1.2764 Ratio: 0.77
+Batch 80/169 Loss: 0.1211 TS Grad: 1.5091 Img Grad: 0.4713 Ratio: 0.31
+Batch 100/169 Loss: 0.1096 TS Grad: 0.9021 Img Grad: 0.4140 Ratio: 0.46
+Batch 120/169 Loss: 0.1784 TS Grad: 3.8338 Img Grad: 1.9292 Ratio: 0.50
+Batch 140/169 Loss: 0.1687 TS Grad: 3.0804 Img Grad: 2.0447 Ratio: 0.66
+Batch 160/169 Loss: 0.2725 TS Grad: 6.3210 Img Grad: 1.9796 Ratio: 0.31
+
+Epoch [17/30], Train Loss: 0.1776, Acc: 95.76%, Val Loss: 0.5128, Acc: 81.17%
+
+Batch 20/169 Loss: 0.0947 TS Grad: 0.4413 Img Grad: 0.0873 Ratio: 0.20
+Batch 40/169 Loss: 0.1537 TS Grad: 2.4953 Img Grad: 1.6169 Ratio: 0.65
+Batch 60/169 Loss: 0.2712 TS Grad: 4.5525 Img Grad: 2.1939 Ratio: 0.48
+Batch 80/169 Loss: 0.1519 TS Grad: 2.1694 Img Grad: 1.2818 Ratio: 0.59
+Batch 100/169 Loss: 0.1065 TS Grad: 0.6908 Img Grad: 0.3526 Ratio: 0.51
+Batch 120/169 Loss: 0.1211 TS Grad: 1.8388 Img Grad: 0.9123 Ratio: 0.50
+Batch 140/169 Loss: 0.1163 TS Grad: 1.2366 Img Grad: 0.4710 Ratio: 0.38
+Batch 160/169 Loss: 0.1107 TS Grad: 0.8807 Img Grad: 0.5442 Ratio: 0.62
+Early stopping at epoch 18
+
+[步骤5] 评估模型性能...
+  正在加载最佳模型: best_damage_detector.pth
+Backend tkagg is interactive backend. Turning interactive mode on.
+
+==================================================
+测试集性能:
+==================================================
+准确率:   0.7861
+精确率:   0.7845
+召回率:   0.7632
+F1分数:   0.7697
+
+============================================================
+开始进行消融实验
+============================================================
+模型配置                 | Loss       | Accuracy   | 贡献度       
+------------------------------------------------------------
+Full Model           | 0.4893     | 78.61     % | (Baseline)
+Image Only           | 0.9555     | 64.83     % | (-13.78%)
+Time Series Only     | 0.9753     | 56.39     % | (-22.22%)
+------------------------------------------------------------
+✓ 结论: 模型有效融合了两个模态的信息，融合效果优于单模态。
+============================================================
