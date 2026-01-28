@@ -290,7 +290,7 @@ class MultiModalDamageDetector(nn.Module):
             nn.Linear(fused_dim, 16),
             nn.BatchNorm1d(16),
             nn.ReLU(),
-            nn.Dropout(0.3),
+            nn.Dropout(0.4),  # 调大dropout会使得模型更依赖融合模态，实际部署会更鲁棒，但单模态测试分数会降低
             nn.Linear(16, num_classes) # 你的任务是2分类，论文中是8分类，需根据任务调整
         )
         
@@ -637,7 +637,7 @@ class OffshoreDamageDetectionSystem:
                 base_params.append(param)
 
         # 调节差异学习率
-        base_lr = learning_rate * 0.06
+        base_lr = learning_rate * 0.1
         classifier_lr = learning_rate * 1
         finetune_lr = learning_rate * 1
 
