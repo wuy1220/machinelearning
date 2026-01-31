@@ -928,11 +928,11 @@ if __name__ == "__main__":
     print("=" * 60)
     generator.generate_comprehensive_dataset(
         num_scenarios=8,
-        healthy_ratio=0.5,
+        healthy_ratio=0.25,
         min_damage_dofs=1,
         max_damage_dofs=2,
-        min_severity=0.5,  # 测试模型能力，如果跑通再调小
-        max_severity=0.8
+        min_severity=0.2,  # 测试模型能力，如果跑通再调小
+        max_severity=0.3
     )
     
     print("\n" + "=" * 60)
