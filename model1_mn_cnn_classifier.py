@@ -637,7 +637,7 @@ class OffshoreDamageDetectionSystem:
                 base_params.append(param)
 
         # 调节差异学习率
-        base_lr = learning_rate * 0.6
+        base_lr = learning_rate * 0.65
         classifier_lr = learning_rate * 1
         finetune_lr = learning_rate * 1
 
@@ -647,7 +647,7 @@ class OffshoreDamageDetectionSystem:
             {'params': classifier_params, 'lr': classifier_lr},
             {'params': finetune_params, 'lr': finetune_lr}
             #{'params': self.model.resnet_fc.parameters(), 'lr': finetune_lr}
-        ], weight_decay=3e-4)
+        ], weight_decay=2e-4)
 
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode='min', factor=0.5, patience=5

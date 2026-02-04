@@ -10,7 +10,7 @@ class H5GVRDataset(Dataset):
     适配新仿真数据的 PyTorch Dataset
     读取 HDF5 文件，提取 GVR 图像和对应的窗口加速度信号特征
     """
-    def __init__(self, data_dir, window_length=2000, transform=None):
+    def __init__(self, data_dir, window_length=3000, transform=None):
         self.data_dir = data_dir
         self.window_length = window_length
         self.transform = transform
@@ -102,8 +102,9 @@ class H5GVRDataset(Dataset):
             # 3. 生成时序特征向量
             # 策略：对所有传感器求平均，变成单通道信号
             signal_1d = np.mean(acc_window, axis=1)
-            time_series = self._extract_features(signal_1d)
-            
+            #time_series = self._extract_features(signal_1d)
+            time_series = signal_1d
+
             # 4. 读取标签
             label = meta['label']
 

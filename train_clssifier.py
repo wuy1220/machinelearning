@@ -10,7 +10,7 @@ from h5_gvr_dataset import H5GVRDataset
 
 def main():
     # ================= 配置参数 =================
-    DATA_DIR = './jacket_damage_data_timespace3'  # 您存放 HDF5 的目录
+    DATA_DIR = './jacket_damage_data_ansys'  # 您存放 HDF5 的目录
     NUM_CLASSES = 2
     BATCH_SIZE = 32
     EPOCHS = 30
@@ -18,7 +18,7 @@ def main():
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
     
     # ================= 1. 初始化数据集 =================
-    full_dataset = H5GVRDataset(data_dir=DATA_DIR, window_length=2000, transform=None)
+    full_dataset = H5GVRDataset(data_dir=DATA_DIR, window_length=3000, transform=None)
     
     # ================= 2. & 3. 全局打乱并划分 (替代原有的场景级划分) =================
     # 说明：不再构建场景索引，直接对全部样本进行全局随机打乱。
@@ -86,7 +86,7 @@ def main():
         val_loader=val_loader,
         epochs=EPOCHS,
         learning_rate=LEARNING_RATE,
-        early_stopping_patience=10
+        early_stopping_patience=8
     )
     
     # ================= 7. 评估模型 =================
