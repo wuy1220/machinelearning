@@ -10,17 +10,15 @@ from h5_gvr_dataset import H5GVRDataset
 
 def main():
     # ================= 配置参数 =================
-    DATA_DIR = './jacket_damage_data_ansys'  # 您存放 HDF5 的目录
-    NUM_CLASSES = 2
+    DATA_DIR = './jacket_data_ansys'  # 您存放 HDF5 的目录
+    NUM_CLASSES = 8
     BATCH_SIZE = 32
     EPOCHS = 30
     LEARNING_RATE = 0.001
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-    WINDOW_LENGTH = 3000  # 3000个时间步长
-    EARLY_STOP_PATIENCE = 5  # 早停耐心参数
-
+    
     # ================= 1. 初始化数据集 =================
-    full_dataset = H5GVRDataset(data_dir=DATA_DIR, window_length=WINDOW_LENGTH, transform=None)
+    full_dataset = H5GVRDataset(data_dir=DATA_DIR, window_length=3000, transform=None)
     
     # ================= 2. & 3. 全局打乱并划分 (替代原有的场景级划分) =================
     # 说明：不再构建场景索引，直接对全部样本进行全局随机打乱。
@@ -56,7 +54,7 @@ def main():
     print(f"  测试集: {len(test_idx)} 个样本")
 
     # ================= 4. 创建 DataLoader =================
-    detection_system = OffshoreDamageDetectionSystem(num_classes=2, device=DEVICE)
+    detection_system = OffshoreDamageDetectionSystem(num_classes=NUM_CLASSES, device=DEVICE)
     
     # 设置 Transform
     full_dataset.transform = detection_system.train_transform
@@ -67,8 +65,8 @@ def main():
     # 验证和测试集需要重新实例化 Dataset 或修改 transform 属性，
     # 因为全量 Dataset 已经被设置了 train_transform（包含数据增强）
     # 为了避免麻烦，这里简单克隆两个 Dataset 用于验证和测试
-    val_dataset_base = H5GVRDataset(DATA_DIR, window_length=WINDOW_LENGTH)
-    test_dataset_base = H5GVRDataset(DATA_DIR, window_length=WINDOW_LENGTH)
+    val_dataset_base = H5GVRDataset(DATA_DIR, window_length=2000)
+    test_dataset_base = H5GVRDataset(DATA_DIR, window_length=2000)
     val_dataset_base.transform = detection_system.valid_transform
     test_dataset_base.transform = detection_system.valid_transform
     
@@ -88,7 +86,7 @@ def main():
         val_loader=val_loader,
         epochs=EPOCHS,
         learning_rate=LEARNING_RATE,
-        early_stopping_patience=EARLY_STOP_PATIENCE
+        early_stopping_patience=8
     )
     
     # ================= 7. 评估模型 =================

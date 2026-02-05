@@ -1,0 +1,92 @@
+{
+    "classification_rules": [
+        {
+            "class_id": 0,
+            "name": "健康状态",
+            "match_type": "healthy"
+        },
+        {
+            "class_id": 1,
+            "name": "节点3损伤(30%)",
+            "match_type": "damage",
+            "dofs": [
+                3
+            ],
+            "severities": [
+                0.3
+            ]
+        },
+        {
+            "class_id": 2,
+            "name": "节点3损伤(40%)",
+            "match_type": "damage",
+            "dofs": [
+                3
+            ],
+            "severities": [
+                0.4
+            ]
+        },
+        {
+            "class_id": 3,
+            "name": "节点5损伤(40%)",
+            "match_type": "damage",
+            "dofs": [
+                5
+            ],
+            "severities": [
+                0.4
+            ]
+        },
+        {
+            "class_id": 4,
+            "name": "4号40%+8号40%损伤",
+            "match_type": "damage",
+            "dofs": [
+                4,
+                8
+            ],
+            "severities": [
+                0.4,
+                0.4
+            ]
+        },
+        {
+            "class_id": 5,
+            "name": "节点7损伤(40%)",
+            "match_type": "damage",
+            "dofs": [
+                7
+            ],
+            "severities": [
+                0.4
+            ]
+        },
+        {
+            "class_id": 6,
+            "name": "5号40%+10号30%损伤",
+            "match_type": "damage",
+            "dofs": [
+                5,
+                10
+            ],
+            "severities": [
+                0.4,
+                0.3
+            ]
+        },
+        {
+            "class_id": 7,
+            "name": "6号30%+12号30%损伤",
+            "match_type": "damage",
+            "dofs": [
+                6,
+                12
+            ],
+            "severities": [
+                0.3,
+                0.3
+            ]
+        }
+    ]
+}

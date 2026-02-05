@@ -10,49 +10,83 @@ from tqdm import tqdm
 from typing import Tuple, List, Dict, Optional
 import json
 import random
-from scipy.signal import find_peaks 
 
 # ============================================================
-# 新增：ANSYS数据加载器
+# 修改后的ANSYS数据加载器（支持配置化分类）
 # ============================================================
 class ANSYSDataLoader:
     """
     从外部目录加载ANSYS仿真加速度数据
+    根据外部 JSON 配置文件进行分类映射
     """
-    def __init__(self, data_root: str = './ansys_data', num_degrees: int = 15, num_steps: int = 30000):
+    def __init__(self, data_root: str = './ansys_data', 
+                 num_degrees: int = 15, 
+                 num_steps: int = 30000,
+                 config_file: str = './damage_config.json'):
         """
         Args:
             data_root: ansys_data根目录
             num_degrees: 传感器/通道数量 (15)
             num_steps: 采样点数量 (30000)
+            config_file: 分类配置文件路径
         """
         self.data_root = data_root
         self.num_degrees = num_degrees
         self.num_steps = num_steps
-        self.dt = 0.001  # 根据tree.txt中的时间步长推断
+        self.dt = 0.001
         self.healthy_folder_name = '无损'
         
-        # 检查目录是否存在
+        # 加载分类配置
+        self.class_map = self._load_config(config_file)
+        print(f"已加载分类配置，共定义 {len(self.class_map)} 个类别。")
+        
         if not os.path.exists(self.data_root):
             raise FileNotFoundError(f"数据目录不存在: {self.data_root}")
+
+    def _load_config(self, config_file):
+        """加载 JSON 配置并构建哈希映射"""
+        if not os.path.exists(config_file):
+            raise FileNotFoundError(f"找不到配置文件: {config_file}")
+        
+        with open(config_file, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        
+        mapping = {}
+        rules = config.get('classification_rules', [])
+        
+        for rule in rules:
+            cid = rule['class_id']
+            match_type = rule['match_type']
+            
+            if match_type == 'healthy':
+                # 健康类直接映射
+                mapping[('healthy',)] = cid
+            elif match_type == 'damage':
+                # 损伤类：生成特征键 (dofs, severities)
+                # 注意：需要对 DOF 进行排序，并保留对应的 severity 顺序，以保证唯一性
+                dofs = sorted(rule['dofs'])
+                severities = rule['severities']
+                
+                # 这里假设输入的 severities 顺序是和 DOF 对应的
+                # 如果配置文件里写的是 [0.3, 0.4]，我们需要按 DOF 排序后重新排列 severities
+                # 为了简单起见，要求配置文件里的 severities 必须和 dofs 顺序一致（或者我们不做复杂排序）
+                # 简单处理：直接用 tuple 存储
+                key = tuple(zip(dofs, [round(s, 2) for s in severities]))
+                mapping[key] = cid
+                
+        return mapping
 
     def _parse_folder_name(self, folder_name: str):
         """
         从文件夹名称解析损伤信息
-        例如: "3号30%损伤" -> {3: 0.3}
-        例如: "4号40%+8号40%损伤" -> {4: 0.4, 8: 0.4}
         """
         damaged_dofs = []
         severity_ratios = []
         
-        # 移除"损伤"后缀
         temp_name = folder_name.replace("损伤", "")
-        
-        # 分割多个损伤 (如 "4号40%+8号40%")
         segments = temp_name.split('+')
         
         for seg in segments:
-            # 正则匹配 "数字号数字%"
             match = re.search(r'(\d+)号(\d+)%', seg)
             if match:
                 dof = int(match.group(1))
@@ -63,27 +97,14 @@ class ANSYSDataLoader:
         return damaged_dofs, severity_ratios
 
     def load_single_file(self, file_path: str):
-        """
-        读取单个ANSYS导出的txt文件
-        格式: 索引 时间 加速度
-        跳过第一行表头
-        """
+        """读取单个文件"""
         try:
-            # 使用numpy读取，跳过第一行
-            # 假设列之间用空白字符分隔
             data = np.loadtxt(file_path, skiprows=1)
-            # data shape: (N, 3) or (N, 2)
-            # 我们只需要加速度值 (最后一列)
-            # 如果数据不足30000点，进行截断或填充? 假设都是完整的
             acc = data[:, -1]
-            
-            # 确保长度一致
             if len(acc) > self.num_steps:
                 acc = acc[:self.num_steps]
             elif len(acc) < self.num_steps:
-                # 如果数据不足，进行边缘填充
                 acc = np.pad(acc, (0, self.num_steps - len(acc)), 'edge')
-                
             return acc
         except Exception as e:
             print(f"读取文件错误 {file_path}: {e}")
@@ -91,28 +112,17 @@ class ANSYSDataLoader:
 
     def load_scenario(self, folder_name: str) -> Dict:
         """
-        加载特定场景的所有通道数据
+        加载特定场景的所有通道数据，并根据配置分配类别标签
         """
         folder_path = os.path.join(self.data_root, folder_name)
         if not os.path.isdir(folder_path):
-            print(f"目录不存在，跳过: {folder_path}")
             return None
 
-        # 初始化响应矩阵
         response = np.zeros((self.num_steps, self.num_degrees))
-        
-        # 遍历1到15个通道
-        # 假设文件名格式为: "文件夹名1.txt", "文件夹名2.txt" ...
-        # 或者是 "无损1.txt" 等
         found_files = 0
+        
         for i in range(1, self.num_degrees + 1):
-            # 尝试匹配文件名，例如 "无损1.txt" 或 "3号30%损伤1.txt"
-            # 注意：tree.txt中显示文件名包含文件夹名前缀
-            possible_names = [
-                f"{folder_name}{i}.txt",
-                f"{i}.txt"
-            ]
-            
+            possible_names = [f"{folder_name}{i}.txt", f"{i}.txt"]
             file_path = None
             for name in possible_names:
                 full_path = os.path.join(folder_path, name)
@@ -123,21 +133,36 @@ class ANSYSDataLoader:
             if file_path:
                 response[:, i-1] = self.load_single_file(file_path)
                 found_files += 1
-            else:
-                print(f"警告: 场景 {folder_name} 中找不到通道 {i} 的数据文件")
         
         if found_files == 0:
-            print(f"错误: 场景 {folder_name} 中没有找到任何有效数据文件")
             return None
 
-        # 解析标签
+        # 解析损伤信息
+        damaged_dofs, severity_ratios = self._parse_folder_name(folder_name)
+        
+        # ==================== 核心逻辑：查找类别标签 ====================
+        damage_class = 0 # 默认值
+        
         if folder_name == self.healthy_folder_name:
-            damaged_dofs = []
-            severity_ratios = []
-            damage_class = 0
+            # 尝试查找健康类配置
+            damage_class = self.class_map.get(('healthy',), 0)
         else:
-            damaged_dofs, severity_ratios = self._parse_folder_name(folder_name)
-            damage_class = 1 if len(damaged_dofs) > 0 else 0
+            # 构建查找键
+            # 必须对 DOF 进行排序，以匹配 JSON 中定义的顺序
+            if damaged_dofs:
+                # 将 DOF 和 Severity 组合并按 DOF 排序
+                # 例如: [(8, 0.4), (3, 0.3)] -> [(3, 0.3), (8, 0.4)]
+                paired = list(zip(damaged_dofs, severity_ratios))
+                paired.sort(key=lambda x: x[0])
+                
+                # 保留两位小数以防浮点误差
+                key = tuple([(d, round(s, 2)) for d, s in paired])
+                
+                damage_class = self.class_map.get(key, -1) # -1 表示未找到
+        
+        if damage_class == -1:
+            print(f"⚠️ 警告: 场景 '{folder_name}' (损伤: {damaged_dofs}) 未在配置文件中找到匹配规则，将忽略该场景。")
+            return None
 
         return {
             'acceleration': response,
@@ -146,6 +171,7 @@ class ANSYSDataLoader:
             'damage_class': damage_class,
             'folder_name': folder_name
         }
+
 
 # ============================================================
 # 保持不变：特征提取器
@@ -341,116 +367,6 @@ class ImprovedDamageDataGenerator:
         grp.attrs['step_size'] = self.gvr_extractor.step_size
         grp.attrs['num_stack_windows'] = self.gvr_extractor.num_stack_windows
 
-    def validate_auto_labeling(self, auto_labels, ground_truth_labels):
-        """
-        验证自动标注与人工标注的一致性
-        """
-        accuracy = np.mean(auto_labels == ground_truth_labels)
-        
-        # 计算精确率和召回率
-        tp = np.sum((auto_labels == 1) & (ground_truth_labels == 1))
-        fp = np.sum((auto_labels == 1) & (ground_truth_labels == 0))
-        fn = np.sum((auto_labels == 0) & (ground_truth_labels == 1))
-        
-        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-        recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-        
-        return {
-            'accuracy': accuracy,
-            'precision': precision,
-            'recall': recall,
-            'false_positive_rate': fp / len(auto_labels)
-        }
-
-    def auto_label_using_gvr(self, 
-                              damaged_signal: np.ndarray, 
-                              healthy_signal: np.ndarray,
-                              prob_threshold: float = 5.0,  # 建议降低阈值到 5% 以提高灵敏度
-                              ) -> np.ndarray:
-        """
-        基于GVR分析的自动标注方法（修正版：使用相对最大值）
-        """
-        # 初始化滤波器
-        nyquist = 0.5 / self.data_loader.dt
-        b, a = signal.butter(4, self.gvr_extractor.cutoff_freq / nyquist, btype='low')
-        
-        # 1. 预处理：滤波
-        filtered_damaged = signal.filtfilt(b, a, damaged_signal, axis=0)
-        filtered_healthy = signal.filtfilt(b, a, healthy_signal, axis=0)
-        
-        n_channels = damaged_signal.shape[1]
-        num_windows = (filtered_damaged.shape[0] - self.gvr_extractor.window_length) // self.gvr_extractor.step_size + 1
-        
-        # 2. 计算 DI_series（必须在循环内计算）
-        DI_series = np.zeros((num_windows, n_channels))
-        for win_idx in range(num_windows):
-            start = win_idx * self.gvr_extractor.step_size
-            end = start + self.gvr_extractor.window_length
-            
-            win_damaged = filtered_damaged[start:end]
-            win_healthy = filtered_healthy[start:end]
-            
-            # 论文公式(8)
-            for ch in range(n_channels):
-                numerator = np.sum((win_damaged[:, ch] - win_healthy[:, ch]) ** 2)
-                denominator = np.sum(win_healthy[:, ch] ** 2) + 1e-10
-                DI_series[win_idx, ch] = np.sqrt(numerator) / np.sqrt(denominator)
-        
-        # 空间一阶导数：计算相邻传感器的 DI 差异
-        # 逻辑：DI[i] - DI[i-1]
-        DI_prime = np.zeros_like(DI_series)
-        DI_prime[:, 1:] = DI_series[:, 1:] - DI_series[:, :-1]
-        
-        # 空间二阶导数：计算空间梯度的变化率（即检测波峰）
-        # 逻辑：abs((DI[i]-DI[i-1]) - (DI[i-1]-DI[i-2]))
-        DI_double_prime = np.zeros_like(DI_prime)
-        # 注意：由于是一阶导数再求导，二阶导数的有效长度是 (n_channels - 2)
-        DI_double_prime[:, 1:] = np.abs(DI_prime[:, 1:] - DI_prime[:, :-1])
-        
-        # 4. 统计各通道的故障发生次数
-        # 此时 DI_double_prime 的形状是 (num_windows, n_channels)
-        # 但边缘由于差分计算，前两列和后两列可能数值不稳定，通常只看中间或整体比较
-        
-        n_channels = DI_series.shape[1]
-        fault_occurrences = np.zeros(n_channels)
-        
-        for win_idx in range(num_windows):
-            # 获取当前窗口的空间 GVR 分布
-            spatial_gvr = DI_double_prime[win_idx]
-            
-            # 找到空间上 GVR 最大的位置（即损伤波峰最明显的地方）
-            # 这对应于论文中的 "arg relextrema max"
-            #max_channel_idx = np.argmax(spatial_gvr)
-            
-            # 计数
-            #fault_occurrences[max_channel_idx] += 1
-            #'''
-            if np.max(spatial_gvr) > 1e-8:
-                prominence_threshold = np.max(spatial_gvr) * 0.1
-            else:
-                prominence_threshold = 0
-            
-            # 2. 寻找所有满足条件的峰值
-            # distance=2: 防止相邻两个传感器（如4和5）被识别为两个不同的损伤点，强制它们合并为一个
-            peaks, properties = find_peaks(
-                spatial_gvr, 
-                prominence=prominence_threshold, 
-                distance=2,
-            ) # 例如：高于均值+2倍标准差)
-            
-            # 3. 计数
-            for ch in peaks:
-                fault_occurrences[ch] += 1
-            #'''
-            
-        # 5. 计算损伤概率
-        probabilities = (fault_occurrences / num_windows) * 100
-        
-        # 6. 根据概率阈值生成标签
-        auto_labels = (probabilities > prob_threshold).astype(int)
-        
-        return auto_labels, probabilities, DI_double_prime
-
     def generate_from_directory(self, scenarios_per_shard=200):
         """
         扫描目录并生成HDF5数据集
@@ -508,28 +424,6 @@ class ImprovedDamageDataGenerator:
             # 此时 healthy_response == damaged_response (理论上)
             # 但为了计算特征图，函数期望两个输入
             
-            # ==================== 新增：自动标注 ====================
-            if folder_name != self.data_loader.healthy_folder_name:
-                # 对损伤场景进行自动标注
-                auto_labels, probabilities, gvr_matrix = self.auto_label_using_gvr(
-                    damaged_response, 
-                    healthy_response,
-                )
-                
-                # 打印自动标注结果（调试用）
-                damaged_channels = np.where(auto_labels == 1)[0]
-                print(f"\n场景 {folder_name} 自动标注结果:")
-                print(f"  检测到的损伤通道: {damaged_channels}")
-                print(f"  各通道损伤概率: {probabilities}")
-                
-                # 使用自动生成的标签
-                labels = auto_labels
-            else:
-                # 健康场景标签全为0
-                labels = np.zeros(self.num_degrees, dtype=int)
-            # =====================================================
-
-
             # 提取特征
             feature_maps = self.gvr_extractor.generate_intra_window_feature_maps(
                 damaged_response, 
@@ -539,51 +433,50 @@ class ImprovedDamageDataGenerator:
             
             num_samples = feature_maps.shape[0]
             
-
-            # 3. 准备数据（对所有场景）
+            # 生成标签
+            labels = np.zeros(self.num_degrees, dtype=int)
+            damaged_dofs = scenario_data['damaged_dofs']
+            if damaged_dofs:
+                labels[np.array(damaged_dofs)] = 1
             labels_array = np.tile(labels, (num_samples, 1))
+            
             damage_class = scenario_data['damage_class']
 
+            # 计算加速度保存长度
             total_steps_needed = (num_samples - 1) * self.gvr_extractor.step_size + \
-                            self.gvr_extractor.window_length
+                               self.gvr_extractor.window_length
             acc_to_save = damaged_response[:total_steps_needed]
-
+            
             data_dict = {
                 'acceleration': acc_to_save,
                 'feature_maps': feature_maps,
                 'labels': labels_array[0],
                 'damage_class': damage_class,
-                'damaged_dofs': np.where(labels==1)[0].tolist(),
+                'damaged_dofs': damaged_dofs,
                 'severity_ratios': scenario_data['severity_ratios'],
                 'folder_name': folder_name,
                 'num_samples': num_samples
             }
-
-            # 4. 写入文件和元数据（对所有场景）
+            
             group_name = f'scenario_{folder_name}'
             self._write_scenario_to_group(hf, group_name, data_dict)
-
+            
             self.metadata.append({
                 'scenario_id': folder_name,
                 'shard_id': current_shard_idx,
                 'group_name': group_name,
-                'auto_labeled_dofs': np.where(labels == 1)[0].tolist(),
-                'damage_probabilities': probabilities.tolist() if folder_name != self.data_loader.healthy_folder_name else [],
-                'ground_truth_dofs': scenario_data['damaged_dofs'],
+                'damaged_dofs': damaged_dofs,
+                'severity_ratios': scenario_data['severity_ratios'],
                 'damage_class': damage_class,
                 'num_samples': num_samples
             })
-
-            # 5. 如果是损伤场景，进行验证（可选，放在最后）
-            if folder_name != self.data_loader.healthy_folder_name:
-                ground_truth = np.zeros(self.num_degrees, dtype=int)
-                for dof in scenario_data['damaged_dofs']:
-                    ground_truth[dof - 1] = 1
-                validation_results = self.validate_auto_labeling(auto_labels, ground_truth)
-                print(f"  自动标注验证: 准确率={validation_results['accuracy']:.2%}...")
-
-            # 6. 计数器递增（确保在循环最外层）
+            
             scenarios_in_current_shard += 1
+            if scenarios_in_current_shard >= scenarios_per_shard:
+                hf.close()
+                hf = None
+                scenarios_in_current_shard = 0
+                current_shard_idx += 1
 
         if hf is not None:
             hf.close()
@@ -599,7 +492,7 @@ class ImprovedDamageDataGenerator:
 if __name__ == "__main__":
     # ===== 参数配置 =====
     # 根据实际情况修改路径
-    data_root = './ansys_data_hd' 
+    data_root = './ansys_data' 
     
     # 初始化ANSYS数据加载器
     print("=" * 60)
@@ -634,7 +527,7 @@ if __name__ == "__main__":
     generator = ImprovedDamageDataGenerator(
         data_loader=loader,
         gvr_extractor=gvr_extractor,
-        output_dir='./jacket_damage_data_ansys'
+        output_dir='./jacket_data_ansys'
     )
     
     # 生成数据集
