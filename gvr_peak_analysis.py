@@ -376,4 +376,105 @@ Damaged Channels: {np.sum(auto_labels)} / {len(auto_labels)}
     plt.savefig(os.path.join(output_dir, 'di_double_prime_heatmap.png'), dpi=150, bbox_inches='tight')
     plt.close()
 
+# 在gvr_peak_analysis.py文件末尾添加以下代码
 
+if __name__ == '__main__':
+    # 设置参数
+    data_root = './ansys_data'  # ANSYS数据根目录
+    output_dir = './gvr_analysis_output'  # 输出目录
+    num_degrees = 15  # 传感器/通道数量
+    num_steps = 30000  # 采样点数量
+    
+    # 分析参数
+    window_length = 3000  # 分析窗口长度
+    step_size = 50  # 步长
+    cutoff_freq = 6.0  # 低通滤波截止频率
+    prob_threshold = 15.0  # 损伤分类概率阈值
+    
+    try:
+        # 初始化数据加载器
+        print("初始化ANSYS数据加载器...")
+        loader = ANSYSDataLoader(data_root=data_root, num_degrees=num_degrees, num_steps=num_steps)
+        
+        # 加载健康状态数据
+        print("加载健康状态数据...")
+        healthy_data = loader.load_scenario(loader.healthy_folder_name)
+        if healthy_data is None:
+            raise ValueError("无法加载健康状态数据")
+        
+        # 获取所有损伤场景
+        print("获取损伤场景列表...")
+        damage_scenarios = []
+        for item in os.listdir(data_root):
+            if os.path.isdir(os.path.join(data_root, item)) and item != loader.healthy_folder_name:
+                damage_scenarios.append(item)
+        
+        if not damage_scenarios:
+            raise ValueError("未找到任何损伤场景数据")
+        
+        print(f"找到 {len(damage_scenarios)} 个损伤场景")
+        
+        # 分析每个损伤场景
+        for scenario in damage_scenarios:
+            print(f"\n分析场景: {scenario}")
+            
+            # 加载损伤数据
+            damaged_data = loader.load_scenario(scenario)
+            if damaged_data is None:
+                print(f"警告: 无法加载场景 {scenario} 的数据，跳过")
+                continue
+            
+            # 创建场景特定的输出目录
+            scenario_output_dir = os.path.join(output_dir, scenario)
+            
+            # 执行GVR峰值分析
+            print("执行GVR峰值分析...")
+            auto_labels, probabilities, DI_double_prime, analysis_data = analyze_gvr_peaks(
+                damaged_signal=damaged_data['acceleration'],
+                healthy_signal=healthy_data['acceleration'],
+                dt=loader.dt,
+                window_length=window_length,
+                step_size=step_size,
+                cutoff_freq=cutoff_freq,
+                prob_threshold=prob_threshold,
+                visualize=True,
+                output_dir=scenario_output_dir
+            )
+            
+            # 保存分析结果
+            result = {
+                'scenario': scenario,
+                'damaged_dofs': damaged_data['damaged_dofs'],
+                'severity_ratios': damaged_data['severity_ratios'],
+                'auto_labels': auto_labels.tolist(),
+                'probabilities': probabilities.tolist(),
+                'analysis_parameters': {
+                    'window_length': window_length,
+                    'step_size': step_size,
+                    'cutoff_freq': cutoff_freq,
+                    'prob_threshold': prob_threshold
+                }
+            }
+            
+            # 保存结果为JSON文件
+            result_file = os.path.join(scenario_output_dir, 'analysis_result.json')
+            with open(result_file, 'w') as f:
+                json.dump(result, f, indent=4)
+            
+            print(f"分析完成，结果已保存到: {scenario_output_dir}")
+            
+            # 打印每个通道的受损概率
+            print("\n各通道受损概率:")
+            print("通道\t概率(%)")
+            for i, prob in enumerate(probabilities):
+                print(f"{i+1}\t{prob:.2f}")
+
+            # 打印简要结果
+            detected_dofs = [i+1 for i, label in enumerate(auto_labels) if label == 1]
+            print(f"检测到的损伤通道: {detected_dofs}")
+            print(f"实际损伤通道: {damaged_data['damaged_dofs']}")
+            
+    except Exception as e:
+        print(f"程序运行出错: {str(e)}")
+        import traceback
+        traceback.print_exc()

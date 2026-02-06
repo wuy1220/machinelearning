@@ -1,1 +1,16 @@
 Nothing should be ignored since only a Python source file (`gvr_peak_analysis.py`) was modified and no build artifacts, dependencies, or temporary files were detected in the changes.
+/ansys_data
+/ansys_data_hd
+/extracted_gvr_fast
+/gvr_analysis_output
+/gvr_channels_split
+/gvr_debug_plots
+/jacket_damage_data_timespace2
+/jacket_damage_data_timespace4
+/visualized_gvr_check
+/jacket_damage_data_timespace3
+/__pycache__
+/训练出的模型
+/jacket_damage_data_ansys
+/jacket_data_ansys
+/训练出的模型
