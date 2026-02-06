@@ -9,8 +9,150 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import scipy.signal as signal
-from scipy.signal import find_peaks
+import h5py
 import os
+import re
+from tqdm import tqdm
+from typing import Tuple, List, Dict, Optional
+import json
+import random
+from scipy.signal import find_peaks 
+
+
+# ============================================================
+# 新增：ANSYS数据加载器
+# ============================================================
+class ANSYSDataLoader:
+    """
+    从外部目录加载ANSYS仿真加速度数据
+    """
+    def __init__(self, data_root: str = './ansys_data', num_degrees: int = 15, num_steps: int = 30000):
+        """
+        Args:
+            data_root: ansys_data根目录
+            num_degrees: 传感器/通道数量 (15)
+            num_steps: 采样点数量 (30000)
+        """
+        self.data_root = data_root
+        self.num_degrees = num_degrees
+        self.num_steps = num_steps
+        self.dt = 0.001  # 根据tree.txt中的时间步长推断
+        self.healthy_folder_name = '无损'
+        
+        # 检查目录是否存在
+        if not os.path.exists(self.data_root):
+            raise FileNotFoundError(f"数据目录不存在: {self.data_root}")
+
+    def _parse_folder_name(self, folder_name: str):
+        """
+        从文件夹名称解析损伤信息
+        例如: "3号30%损伤" -> {3: 0.3}
+        例如: "4号40%+8号40%损伤" -> {4: 0.4, 8: 0.4}
+        """
+        damaged_dofs = []
+        severity_ratios = []
+        
+        # 移除"损伤"后缀
+        temp_name = folder_name.replace("损伤", "")
+        
+        # 分割多个损伤 (如 "4号40%+8号40%")
+        segments = temp_name.split('+')
+        
+        for seg in segments:
+            # 正则匹配 "数字号数字%"
+            match = re.search(r'(\d+)号(\d+)%', seg)
+            if match:
+                dof = int(match.group(1))
+                severity = float(match.group(2)) / 100.0
+                damaged_dofs.append(dof)
+                severity_ratios.append(severity)
+        
+        return damaged_dofs, severity_ratios
+
+    def load_single_file(self, file_path: str):
+        """
+        读取单个ANSYS导出的txt文件
+        格式: 索引 时间 加速度
+        跳过第一行表头
+        """
+        try:
+            # 使用numpy读取，跳过第一行
+            # 假设列之间用空白字符分隔
+            data = np.loadtxt(file_path, skiprows=1)
+            # data shape: (N, 3) or (N, 2)
+            # 我们只需要加速度值 (最后一列)
+            # 如果数据不足30000点，进行截断或填充? 假设都是完整的
+            acc = data[:, -1]
+            
+            # 确保长度一致
+            if len(acc) > self.num_steps:
+                acc = acc[:self.num_steps]
+            elif len(acc) < self.num_steps:
+                # 如果数据不足，进行边缘填充
+                acc = np.pad(acc, (0, self.num_steps - len(acc)), 'edge')
+                
+            return acc
+        except Exception as e:
+            print(f"读取文件错误 {file_path}: {e}")
+            return np.zeros(self.num_steps)
+
+    def load_scenario(self, folder_name: str) -> Dict:
+        """
+        加载特定场景的所有通道数据
+        """
+        folder_path = os.path.join(self.data_root, folder_name)
+        if not os.path.isdir(folder_path):
+            print(f"目录不存在，跳过: {folder_path}")
+            return None
+
+        # 初始化响应矩阵
+        response = np.zeros((self.num_steps, self.num_degrees))
+        
+        # 遍历1到15个通道
+        # 假设文件名格式为: "文件夹名1.txt", "文件夹名2.txt" ...
+        # 或者是 "无损1.txt" 等
+        found_files = 0
+        for i in range(1, self.num_degrees + 1):
+            # 尝试匹配文件名，例如 "无损1.txt" 或 "3号30%损伤1.txt"
+            # 注意：tree.txt中显示文件名包含文件夹名前缀
+            possible_names = [
+                f"{folder_name}{i}.txt",
+                f"{i}.txt"
+            ]
+            
+            file_path = None
+            for name in possible_names:
+                full_path = os.path.join(folder_path, name)
+                if os.path.exists(full_path):
+                    file_path = full_path
+                    break
+            
+            if file_path:
+                response[:, i-1] = self.load_single_file(file_path)
+                found_files += 1
+            else:
+                print(f"警告: 场景 {folder_name} 中找不到通道 {i} 的数据文件")
+
+        if found_files == 0:
+            print(f"错误: 场景 {folder_name} 中没有找到任何有效数据文件")
+            return None
+
+        # 解析标签
+        if folder_name == self.healthy_folder_name:
+            damaged_dofs = []
+            severity_ratios = []
+            damage_class = 0
+        else:
+            damaged_dofs, severity_ratios = self._parse_folder_name(folder_name)
+            damage_class = 1 if len(damaged_dofs) > 0 else 0
+
+        return {
+            'acceleration': response,
+            'damaged_dofs': damaged_dofs,
+            'severity_ratios': severity_ratios,
+            'damage_class': damage_class,
+            'folder_name': folder_name
+        }
 
 
 def analyze_gvr_peaks(damaged_signal: np.ndarray, 
@@ -235,42 +377,3 @@ Damaged Channels: {np.sum(auto_labels)} / {len(auto_labels)}
     plt.close()
 
 
-def test_gvr_peak_analysis():
-    """
-    Test function with sample data
-    """
-    print("Testing GVR Peak Analysis...")
-    
-    # Generate sample data
-    np.random.seed(42)
-    n_steps = 30000
-    n_channels = 15
-    
-    # Healthy signal: random noise
-    healthy_signal = np.random.normal(0, 0.1, (n_steps, n_channels))
-    
-    # Damaged signal: similar to healthy but with some differences in specific channels
-    damaged_signal = healthy_signal.copy()
-    # Add slight variations in channels 5 and 10 to simulate damage
-    damaged_signal[:, 5] += np.random.normal(0.05, 0.05, n_steps)
-    damaged_signal[:, 10] += np.random.normal(0.08, 0.08, n_steps)
-    
-    # Run analysis
-    labels, probabilities, DI_double_prime, analysis_data = analyze_gvr_peaks(
-        damaged_signal, healthy_signal, visualize=True
-    )
-    
-    print(f"Analysis Results:")
-    print(f"Auto Labels: {labels}")
-    print(f"Probabilities (%): {probabilities}")
-    print(f"Shape of DI_double_prime: {DI_double_prime.shape}")
-    print(f"Number of damaged channels detected: {np.sum(labels)}")
-    
-    return labels, probabilities, DI_double_prime, analysis_data
-
-
-if __name__ == "__main__":
-    # Run test
-    test_gvr_peak_analysis()
-    print("GVR Peak Analysis module created successfully!")
-    print("Output plots saved in ./gvr_analysis_output/")
