@@ -466,21 +466,21 @@ class ImprovedDamageDataGenerator:
             
             # 论文公式(8) 计算 DI
             for ch in range(n_channels):
-                numerator = np.sum((win_damaged[:, ch] - win_healthy[:, ch]) ** 2)
+                numerator = np.sum(win_damaged[:, ch] - win_healthy[:, ch])
                 denominator = np.sum(win_healthy[:, ch] ** 2) + 1e-10
-                DI_series[win_idx, ch] = np.sqrt(numerator) / np.sqrt(denominator)
+                DI_series[win_idx, ch] = numerator / denominator
         
         # ==========================================
         # 阶段 2: 计算梯度 (此时 DI_double_prime 才存在)
         # ==========================================
-        # 空间一阶导数：计算相邻传感器的 DI 差异
+        # 一阶导数：计算相邻传感器的 DI 差异
         DI_prime = np.zeros_like(DI_series)
-        DI_prime[:, 1:] = DI_series[:, 1:] - DI_series[:, :-1]
+        DI_prime[1:, :] = DI_series[1:, :] - DI_series[:-1, :]
         
-        # 空间二阶导数：计算空间梯度的变化率（即检测波峰）
+        # 二阶导数：计算空间梯度的变化率（即检测波峰）
         DI_double_prime = np.zeros_like(DI_prime)
         # 注意：由于是一阶导数再求导，二阶导数的有效长度是 (n_channels - 2)
-        DI_double_prime[:, 1:] = np.abs(DI_prime[:, 1:] - DI_prime[:, :-1])
+        DI_double_prime[1:, :] = np.abs(DI_prime[1:, :] - DI_prime[:-1, :])
         
         # ==========================================
         # 阶段 3: 峰值检测与可视化 (在此处使用 DI_double_prime)
@@ -503,7 +503,7 @@ class ImprovedDamageDataGenerator:
             
             # --- 峰值检测逻辑 ---
             if np.max(spatial_gvr) > 1e-8:
-                prominence_threshold = np.max(spatial_gvr) * 0.3 # 使用你当前的参数
+                prominence_threshold = np.max(spatial_gvr) * 0.1 # 使用你当前的参数
             else:
                 prominence_threshold = 0
             
