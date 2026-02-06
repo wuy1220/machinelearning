@@ -6,7 +6,7 @@ import h5py
 
 # 导入您现有的模型和数据集类
 from model1_mn_cnn_classifier import OffshoreDamageDetectionSystem
-from h5_gvr_dataset import H5GVRDataset 
+from h5_gvr_dataset import H5GVRDataset, TimeSeriesCompose, RandomScaling, AddGaussianNoise, RandomTimeShift, RandomCutout
 
 def main():
     # ================= 配置参数 =================
@@ -19,6 +19,18 @@ def main():
     WINDOW_LENGTH = 3000  # 3000个时间步长
     EARLY_STOP_PATIENCE = 5  # 早停耐心参数
 
+
+    # ================== 定义时序增强策略 ==================
+    # 训练集使用增强
+    ts_train_transform = TimeSeriesCompose([
+        RandomScaling(scale_range=(0.95, 1.05)),       # 幅度变化 +/- 10%
+        AddGaussianNoise(std=0.005),                # 添加 0.5% 的噪声
+        RandomTimeShift(max_shift=5),               # 平移 5 个点
+        RandomCutout(max_len=30)                    # 随机遮盖 30 个点
+    ])
+    
+    # 验证/测试集不使用增强 (设为 None 或 Compose([]))
+    ts_valid_transform = None 
     # ================= 1. 初始化数据集 =================
     full_dataset = H5GVRDataset(data_dir=DATA_DIR, window_length=WINDOW_LENGTH, transform=None)
     
@@ -59,7 +71,23 @@ def main():
     detection_system = OffshoreDamageDetectionSystem(num_classes=2, device=DEVICE)
     
     # 设置 Transform
-    full_dataset.transform = detection_system.train_transform
+    # --- 训练集 ---
+    train_dataset_base = H5GVRDataset(DATA_DIR, window_length=WINDOW_LENGTH)
+    train_dataset_base.transform = detection_system.train_transform
+    train_dataset_base.ts_transform = ts_train_transform  # <--- 应用时序增强
+    train_dataset = Subset(train_dataset_base, train_idx)
+    
+    # --- 验证集 ---
+    val_dataset_base = H5GVRDataset(DATA_DIR, window_length=WINDOW_LENGTH)
+    val_dataset_base.transform = detection_system.valid_transform
+    val_dataset_base.ts_transform = ts_valid_transform # <--- 验证集不增强
+    val_dataset = Subset(val_dataset_base, val_idx)
+    
+    # --- 测试集 ---
+    test_dataset_base = H5GVRDataset(DATA_DIR, window_length=WINDOW_LENGTH)
+    test_dataset_base.transform = detection_system.valid_transform
+    test_dataset_base.ts_transform = ts_valid_transform # <--- 测试集不增强
+    test_dataset = Subset(test_dataset_base, test_idx)
     
     # 创建 Subset
     train_dataset = Subset(full_dataset, train_idx)

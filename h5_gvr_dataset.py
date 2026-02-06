@@ -4,6 +4,80 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 from scipy import stats
+import random
+
+class TimeSeriesCompose:
+    """组合多个时序增强操作"""
+    def __init__(self, transforms):
+        self.transforms = transforms
+
+    def __call__(self, signal):
+        for t in self.transforms:
+            signal = t(signal)
+        return signal
+
+class AddGaussianNoise:
+    """添加高斯噪声"""
+    def __init__(self, mean=0.0, std=0.01):
+        """
+        Args:
+            std: 噪声标准差 (相对于信号标准差的倍数)
+                 例如 0.01 表示添加信号幅度 1% 的噪声
+        """
+        self.mean = mean
+        self.std = std
+
+    def __call__(self, tensor):
+        # tensor shape: (Time,)
+        if self.std > 0:
+            noise = torch.randn(tensor.size()) * self.std * torch.std(tensor) + self.mean
+            return tensor + noise
+        return tensor
+
+class RandomScaling:
+    """随机幅度缩放"""
+    def __init__(self, scale_range=(0.9, 1.1)):
+        """
+        Args:
+            scale_range: 缩放因子范围 (min, max)
+        """
+        self.scale_range = scale_range
+
+    def __call__(self, tensor):
+        scale = random.uniform(self.scale_range[0], self.scale_range[1])
+        return tensor * scale
+
+class RandomTimeShift:
+    """随机时间平移"""
+    def __init__(self, max_shift=10):
+        """
+        Args:
+            max_shift: 最大平移点数
+        """
+        self.max_shift = max_shift
+
+    def __call__(self, tensor):
+        shift = random.randint(-self.max_shift, self.max_shift)
+        if shift == 0:
+            return tensor
+        # torch.roll 实现循环移位
+        return torch.roll(tensor, shifts=shift, dims=0)
+
+class RandomCutout:
+    """随机遮盖一小段信号"""
+    def __init__(self, max_len=50):
+        self.max_len = max_len
+
+    def __call__(self, tensor):
+        length = tensor.shape[0]
+        if length <= 10: return tensor
+        
+        cut_len = random.randint(5, self.max_len)
+        start_pos = random.randint(0, length - cut_len)
+        
+        tensor[start_pos : start_pos + cut_len] = 0.0
+        return tensor
+
 
 class H5GVRDataset(Dataset):
     """
@@ -116,5 +190,9 @@ class H5GVRDataset(Dataset):
         # 图像增强
         if self.transform:
             image_tensor = self.transform(image_tensor)
+        # 时序增强    
+        if self.ts_transform:
+            time_series_tensor = self.ts_transform(time_series_tensor)
+            
 
         return time_series_tensor, image_tensor, label_tensor
